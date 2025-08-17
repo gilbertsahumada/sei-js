@@ -1,47 +1,27 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { createPublicClient, createWalletClient, http, parseUnits, formatUnits } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { parseUnits, formatUnits } from "viem";
 import { sei } from "viem/chains";
 import { ERC20_ABI } from "../dex/contracts/abis/index.js";
+import { DEFAULT_NETWORK } from "../chains.js";
+import { getPublicClient, getWalletClientFromProvider } from "../services/clients.js";
 
-/**
- * Wallet and Token utilities for arbitrage preparation
- * Modular tools for checking balances, allowances, and approving tokens
- * Uses PRIVATE_KEY from environment variables for security
- */
-
-// Get private key from environment
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
-if (!PRIVATE_KEY) {
-  throw new Error("PRIVATE_KEY environment variable is required");
-}
-
-// Create account from private key
-const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`);
-
-// Create public client for reading blockchain state
-const publicClient = createPublicClient({
-  chain: sei,
-  transport: http()
-});
-
-// Create wallet client for transactions
-const walletClient = createWalletClient({
-  chain: sei,
-  transport: http(),
-  account
-});
 
 export function registerWalletTools(server: McpServer) {
 
-  // Get wallet info (address from env PRIVATE_KEY)
   server.tool(
     "get_wallet_info",
     "Get wallet address and basic info (from PRIVATE_KEY in environment)",
     {},
     async () => {
       try {
+        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
+        const account = walletClient.account;
+
+        if (!account) {
+          throw new Error("No wallet account found. Ensure PRIVATE_KEY is set in environment.");
+        }
+
         return {
           content: [{
             type: "text",
@@ -76,6 +56,8 @@ export function registerWalletTools(server: McpServer) {
       decimals: z.number().optional().describe("Token decimals (default: 18)")
     },
     async ({ tokenAddress, ownerAddress, decimals = 18 }) => {
+      const publicClient = getPublicClient(DEFAULT_NETWORK);
+
       try {
         // Read balance from token contract
         const balance = await publicClient.readContract({
@@ -148,6 +130,7 @@ export function registerWalletTools(server: McpServer) {
     },
     async ({ tokenAddress, ownerAddress, spenderAddress }) => {
       try {
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
         // Read current allowance
         const allowance = await publicClient.readContract({
           address: tokenAddress as `0x${string}`,
@@ -214,8 +197,11 @@ export function registerWalletTools(server: McpServer) {
     },
     async ({ tokenAddress }) => {
       try {
-        // Use my wallet's address
-        const ownerAddress = account.address;
+
+        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
+
+        const ownerAddress = walletClient.account!.address;
         
         // Read balance from token contract
         const balance = await publicClient.readContract({
@@ -286,6 +272,8 @@ export function registerWalletTools(server: McpServer) {
     },
     async ({ address }) => {
       try {
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
+
         const balance = await publicClient.getBalance({
           address: address as `0x${string}`
         });
@@ -324,6 +312,12 @@ export function registerWalletTools(server: McpServer) {
     {},
     async () => {
       try {
+        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
+        const account = walletClient.account;
+        if (!account) {
+          throw new Error("No wallet account found. Ensure PRIVATE_KEY is set in environment.");
+        }
         const balance = await publicClient.getBalance({
           address: account.address
         });
@@ -369,6 +363,13 @@ export function registerWalletTools(server: McpServer) {
     async ({ tokenAddress, spenderAddress, amount, gasLimit, gasPrice }) => {
       try {
 
+        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
+        const publicClient = await getPublicClient(DEFAULT_NETWORK);
+        const account = walletClient.account!;
+
+        if (!account) {
+          throw new Error("No wallet account found. Ensure PRIVATE_KEY is set in environment.");
+        }
         // Get token decimals for proper amount formatting
         const decimals = await publicClient.readContract({
           address: tokenAddress as `0x${string}`,
@@ -430,7 +431,9 @@ export function registerWalletTools(server: McpServer) {
           functionName: 'approve',
           args: [spenderAddress as `0x${string}`, approveAmount],
           gas: BigInt(estimatedGas),
-          gasPrice: currentGasPrice
+          gasPrice: currentGasPrice,
+          account: account.address,
+          chain: walletClient.chain
         });
 
         // Wait for transaction confirmation
@@ -497,6 +500,7 @@ export function registerWalletTools(server: McpServer) {
     },
     async ({ tokenAddress, spenderAddress, amount }) => {
       try {
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
         // Use max uint256 for unlimited approval if no amount specified
         const approveAmount = amount ? parseUnits(amount, 18) : parseUnits("1000000000", 18);
 

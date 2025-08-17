@@ -1,7 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-// import { TokenManager, DragonSwapTokens, SailorTokens, OkuTradeTokens, YakaFinanceTokens } from "../dex/tokens/index.js";
-// import type { ProtocolName } from "../dex/tokens/TokenManager.js";
 import { SailorTokens } from "../dex/tokens/index.js";
 import { DragonSwapApiPriceFetcher } from "../dex/pricing/DragonSwapApiPriceFetcher.js";
 import { SailorApiPriceFetcher } from "../dex/pricing/SailorApiPriceFetcher.js";
@@ -11,101 +9,8 @@ import { protocolConfig, shouldFetchProtocolData } from "./protocol-config.js";
 /**
  * Register token-related tools with the MCP server
  */
-export function registerTokenTools(server: McpServer) {
-  // Protocol configuration management tools
-  server.tool(
-    "manage_protocols",
-    "Enable, disable, or configure trading protocols (DragonSwap, Yaka, Sailor)",
-    {
-      action: z.enum(["status", "enable", "disable", "toggle", "reset"]).describe("Action to perform"),
-      protocol: z.enum(["dragonswap", "yaka", "sailor"]).optional().describe("Protocol to manage (required for enable/disable/toggle)")
-    },
-    async ({ action, protocol }) => {
-      try {
-        switch (action) {
-          case "status":
-            const config = protocolConfig.getConfig();
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify({
-                  currentConfig: config,
-                  enabledProtocols: protocolConfig.getEnabledProtocols(),
-                  disabledProtocols: protocolConfig.getDisabledProtocols(),
-                  swappingCapable: protocolConfig.getProtocolsWithCapability("swapping"),
-                  pricingCapable: protocolConfig.getProtocolsWithCapability("pricing")
-                }, null, 2)
-              }]
-            };
-
-          case "enable":
-            if (!protocol) throw new Error("Protocol parameter required for enable action");
-            protocolConfig.enableProtocol(protocol);
-            return {
-              content: [{
-                type: "text",
-                text: `✅ Protocol ${protocolConfig.getProtocolConfig(protocol).name} enabled`
-              }]
-            };
-
-          case "disable":
-            if (!protocol) throw new Error("Protocol parameter required for disable action");
-            protocolConfig.disableProtocol(protocol);
-            return {
-              content: [{
-                type: "text",
-                text: `❌ Protocol ${protocolConfig.getProtocolConfig(protocol).name} disabled`
-              }]
-            };
-
-          case "toggle":
-            if (!protocol) throw new Error("Protocol parameter required for toggle action");
-            const newState = protocolConfig.toggleProtocol(protocol);
-            return {
-              content: [{
-                type: "text",
-                text: `🔄 Protocol ${protocolConfig.getProtocolConfig(protocol).name} ${newState ? 'enabled' : 'disabled'}`
-              }]
-            };
-
-          case "reset":
-            protocolConfig.resetToDefaults();
-            return {
-              content: [{
-                type: "text",
-                text: "🔄 All protocol configurations reset to defaults"
-              }]
-            };
-
-          default:
-            throw new Error(`Unknown action: ${action}`);
-        }
-      } catch (error) {
-        return {
-          content: [{
-            type: "text",
-            text: `Error managing protocols: ${error instanceof Error ? error.message : String(error)}`
-          }],
-          isError: true
-        };
-      }
-    }
-  );
-
-  // Simplified token tools - removed complex TokenManager functions
-  
-  // TODO: Re-implement unified token list after fixing TokenManager
-  // server.tool("get_unified_token_list", ...);
-
-  // TODO: Re-implement these functions after fixing TokenManager
-  // server.tool("get_tokens_by_protocol", ...);
-  // server.tool("search_tokens", ...);
-  // server.tool("find_token_everywhere", ...);
-  // server.tool("get_tokens_with_prices", ...);
-  // server.tool("get_arbitrage_opportunities", ...);
-  // server.tool("get_cross_protocol_stats", ...);
-  // server.tool("get_protocol_health", ...);
-
+export function registerTokenTools(server: McpServer) {  
+  console.log("🔧 Registering token tools...");
   // Get tokens with prices from DragonSwap API (SIMPLE VERSION)
   server.tool(
     "get_dragonswap_prices",
@@ -355,9 +260,6 @@ export function registerTokenTools(server: McpServer) {
       }
     }
   );
-
-  // Note: Oku pricing removed - they don't have a public API yet
-  // If needed, could be implemented with on-chain calls, but DragonSwap and Yaka APIs are much faster
 
   // Get Sailor tokens with prices from their API
   server.tool(

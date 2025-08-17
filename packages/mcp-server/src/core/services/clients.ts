@@ -1,5 +1,4 @@
 import { http, type Address, type Hex, type PublicClient, type WalletClient, createPublicClient, createWalletClient } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { DEFAULT_NETWORK, getChain, getRpcUrl } from '../chains.js';
 import { getWalletProvider } from '../wallet/index.js';
 
@@ -43,6 +42,15 @@ export function getPublicClient(network = DEFAULT_NETWORK): PublicClient {
 export async function getWalletClientFromProvider(network = DEFAULT_NETWORK): Promise<WalletClient> {
 	const walletProvider = getWalletProvider();
 	return walletProvider.getWalletClient(network);
+}
+
+
+export async function getAccountFromProvider(network = DEFAULT_NETWORK): Promise<Address> {
+	const walletClient = await getWalletClientFromProvider(network);
+	if (!walletClient.account) {
+		throw new Error('Wallet account not initialized. Ensure PRIVATE_KEY is set in environment.');
+	}
+	return walletClient.account.address;
 }
 
 /**

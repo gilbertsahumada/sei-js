@@ -5,7 +5,7 @@
  * Prevents unnecessary API calls when protocols are disabled
  */
 
-export interface ProtocolConfig {
+interface ProtocolConfig {
   enabled: boolean;
   name: string;
   description: string;

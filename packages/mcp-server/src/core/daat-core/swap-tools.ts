@@ -1,10 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { createPublicClient, createWalletClient, http, parseUnits, formatUnits } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { sei } from "viem/chains";
+import { getWalletClientFromProvider, getPublicClient } from "../services/clients.js";
+import { parseUnits, formatUnits } from "viem";
 import { ERC20_ABI, DRAGONSWAP_ROUTER_ABI, DRAGONSWAP_ROUTER_ADDRESS } from "../dex/contracts/abis/index.js";
 import { protocolConfig, shouldFetchProtocolData } from "./protocol-config.js";
+import { DEFAULT_NETWORK } from "../chains.js";
 
 /**
  * Swap execution tools for DEX protocols
@@ -12,30 +12,8 @@ import { protocolConfig, shouldFetchProtocolData } from "./protocol-config.js";
  * Uses PRIVATE_KEY from environment variables for security
  */
 
-// Get private key from environment
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
-if (!PRIVATE_KEY) {
-  throw new Error("PRIVATE_KEY environment variable is required");
-}
-
-// Create account from private key
-const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`);
-
 // Use DragonSwap Router Address from ABI file
 const DRAGONSWAP_ROUTER = DRAGONSWAP_ROUTER_ADDRESS;
-
-// Create public client for reading blockchain state
-const publicClient = createPublicClient({
-  chain: sei,
-  transport: http()
-});
-
-// Create wallet client for transactions
-const walletClient = createWalletClient({
-  chain: sei,
-  transport: http(),
-  account
-});
 
 export function registerSwapTools(server: McpServer) {
 
@@ -61,6 +39,22 @@ export function registerSwapTools(server: McpServer) {
               text: JSON.stringify({
                 error: "DragonSwap protocol is disabled",
                 suggestion: "Use manage_protocols tool to enable DragonSwap"
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        const publicClient = await getPublicClient(DEFAULT_NETWORK);
+        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
+        const account = walletClient.account;
+
+        if (!account) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "No wallet account found. Please connect your wallet."
               }, null, 2)
             }],
             isError: true
@@ -187,7 +181,9 @@ export function registerSwapTools(server: McpServer) {
             BigInt(deadlineTimestamp)
           ],
           gas: BigInt(estimatedGas),
-          gasPrice: currentGasPrice
+          gasPrice: currentGasPrice,
+          account: walletClient.account!,
+          chain: walletClient.chain
         });
 
         // Wait for transaction confirmation
@@ -288,6 +284,7 @@ export function registerSwapTools(server: McpServer) {
           };
         }
 
+        const publicClient = await getPublicClient(DEFAULT_NETWORK);
         // Get token decimals
         const [tokenInDecimals, tokenOutDecimals] = await Promise.all([
           publicClient.readContract({

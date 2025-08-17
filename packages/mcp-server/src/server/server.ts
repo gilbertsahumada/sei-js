@@ -6,6 +6,7 @@ import { createSeiJSDocsSearchTool } from '../mintlify/search.js';
 import { getPackageInfo } from './package-info.js';
 import { getSupportedNetworks } from '../core/chains.js';
 import { createDocsSearchTool } from '../docs/index.js';
+import { registerTokenTools } from '../core/daat-core/token-tools.js';
 
 export const getServer = async () => {
 	try {
@@ -18,6 +19,8 @@ export const getServer = async () => {
 		registerEVMResources(server);
 		registerEVMTools(server);
 		registerEVMPrompts(server);
+		// New Tools
+		registerTokenTools(server);
 
 		await createSeiJSDocsSearchTool(server);
 

@@ -5,7 +5,7 @@
  * Used for arbitrage calculations and trading
  */
 
-export interface TokenConfig {
+interface TokenConfig {
   address: string;
   symbol: string;
   name: string;
