@@ -7,6 +7,7 @@ import { getPackageInfo } from './package-info.js';
 import { getSupportedNetworks } from '../core/chains.js';
 import { createDocsSearchTool } from '../docs/index.js';
 import { registerTokenTools } from '../core/daat-core/token-tools.js';
+import { registerSwapTools } from '../core/daat-core/swap-tools.js';
 
 export const getServer = async () => {
 	try {
@@ -21,6 +22,7 @@ export const getServer = async () => {
 		registerEVMPrompts(server);
 		// New Tools
 		registerTokenTools(server);
+		registerSwapTools(server);
 
 		await createSeiJSDocsSearchTool(server);
 

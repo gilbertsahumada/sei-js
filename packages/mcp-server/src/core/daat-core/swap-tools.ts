@@ -5,32 +5,53 @@ import { parseUnits, formatUnits } from "viem";
 import { ERC20_ABI, DRAGONSWAP_ROUTER_ABI, DRAGONSWAP_ROUTER_ADDRESS } from "../dex/contracts/abis/index.js";
 import { protocolConfig, shouldFetchProtocolData } from "./protocol-config.js";
 import { DEFAULT_NETWORK } from "../chains.js";
+import { DragonSwapApiService } from "../dex/pricing/DragonSwapApiService.js";
+import { MulticallService } from "../services/MulticallService.js";
 
-/**
- * Swap execution tools for DEX protocols
- * Currently supports DragonSwap (Uniswap V2 style)
- * Uses PRIVATE_KEY from environment variables for security
- */
 
-// Use DragonSwap Router Address from ABI file
 const DRAGONSWAP_ROUTER = DRAGONSWAP_ROUTER_ADDRESS;
 
-export function registerSwapTools(server: McpServer) {
+// USDT = 0x9151434b16b9763660705744891fA906F660EcC5
+// USDC = 0xe15fc38f6d8c56af07bbcbe3baf5708a2bf42392
+// FXS = 0x64445f0aecc51e94ad52d8ac56b7190e764e561a
 
-  // Execute swap on DragonSwap
+export function registerSwapTools(server: McpServer) {
   server.tool(
     "dragonswap_swap",
     "Execute a token swap on DragonSwap DEX (uses PRIVATE_KEY from environment)",
     {
-      tokenIn: z.string().describe("Input token address"),
-      tokenOut: z.string().describe("Output token address"),
-      amountIn: z.string().describe("Amount of input token to swap"),
-      minAmountOut: z.string().describe("Minimum amount of output token expected (slippage protection)"),
-      deadline: z.number().optional().describe("Transaction deadline in minutes from now (default: 20)"),
-      gasLimit: z.number().optional().describe("Gas limit override (default: estimated)"),
-      gasPrice: z.string().optional().describe("Gas price override in wei (default: current)")
+      tokenIn: z.string().min(1, "Input token address is required").refine(
+        (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+        { message: "Input token must be a valid Ethereum address" }
+      ),
+      tokenOut: z.string().min(1, "Output token address is required").refine(
+        (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+        { message: "Output token must be a valid Ethereum address" }
+      ),
+      amountIn: z.string().min(1, "Amount of input token is required").refine(
+        (val) => {
+          const num = parseFloat(val);
+          return !isNaN(num) && num > 0;
+        },
+        { message: "Amount must be a valid positive number" }
+      ),
+      minAmountOut: z.string().refine(
+        (val) => {
+          if (!val) return true; // Allow empty for auto-calculation
+          const num = parseFloat(val);
+          return !isNaN(num) && num > 0;
+        },
+        { message: "Minimum amount out must be a valid positive number when provided" }
+      ).optional().describe("Minimum amount out (optional - will be calculated from quote if not provided)"),
+      slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 0.5)"),
+      deadline: z.number().min(1).max(1440, "Deadline must be between 1 and 1440 minutes").optional().describe("Transaction deadline in minutes from now (default: 20)"),
+      gasLimit: z.number().min(21000, "Gas limit must be at least 21000").optional().describe("Gas limit override (default: estimated)"),
+      gasPrice: z.string().optional().refine(
+        (val) => val === undefined || /^\d+$/.test(val),
+        { message: "Gas price must be a valid number in wei" }
+      ).describe("Gas price override in wei (default: current)")
     },
-    async ({ tokenIn, tokenOut, amountIn, minAmountOut, deadline = 20, gasLimit, gasPrice }) => {
+    async ({ tokenIn, tokenOut, amountIn, minAmountOut, slippage = 0.5, deadline = 20, gasLimit, gasPrice }) => {
       try {
         if (!shouldFetchProtocolData("dragonswap")) {
           return {
@@ -45,7 +66,7 @@ export function registerSwapTools(server: McpServer) {
           };
         }
 
-        const publicClient = await getPublicClient(DEFAULT_NETWORK);
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
         const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
         const account = walletClient.account;
 
@@ -61,41 +82,44 @@ export function registerSwapTools(server: McpServer) {
           };
         }
 
-        // Get token decimals for proper amount formatting
-        const [tokenInDecimals, tokenOutDecimals] = await Promise.all([
-          publicClient.readContract({
-            address: tokenIn as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'decimals'
-          }) as Promise<number>,
-          publicClient.readContract({
-            address: tokenOut as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'decimals'
-          }) as Promise<number>
-        ]);
+        // Get all token info, balance, and allowance in one multicall
+        const multicallService = new MulticallService(publicClient, 1329);
+        const swapInfo = await multicallService.getSwapInfo(
+          tokenIn as `0x${string}`,
+          tokenOut as `0x${string}`,
+          account.address,
+          DRAGONSWAP_ROUTER as `0x${string}`
+        );
+
+        console.log(`Swap info retrieved:`, {
+          tokenIn: { 
+            address: tokenIn, 
+            decimals: swapInfo.tokenInDecimals, 
+            symbol: swapInfo.tokenInSymbol,
+            balance: formatUnits(swapInfo.balance, swapInfo.tokenInDecimals),
+            allowance: formatUnits(swapInfo.allowance, swapInfo.tokenInDecimals)
+          },
+          tokenOut: { 
+            address: tokenOut, 
+            decimals: swapInfo.tokenOutDecimals, 
+            symbol: swapInfo.tokenOutSymbol 
+          }
+        });
 
         // Parse amounts using proper decimals
-        const amountInParsed = parseUnits(amountIn, tokenInDecimals);
-        const minAmountOutParsed = parseUnits(minAmountOut, tokenOutDecimals);
+        const amountInParsed = parseUnits(amountIn, swapInfo.tokenInDecimals);
 
         // Check if user has enough balance
-        const balance = await publicClient.readContract({
-          address: tokenIn as `0x${string}`,
-          abi: ERC20_ABI,
-          functionName: 'balanceOf',
-          args: [account.address]
-        }) as bigint;
-
-        if (balance < amountInParsed) {
+        if (swapInfo.balance < amountInParsed) {
           return {
             content: [{
               type: "text",
               text: JSON.stringify({
                 error: "Insufficient balance",
-                required: formatUnits(amountInParsed, tokenInDecimals),
-                available: formatUnits(balance, tokenInDecimals),
-                tokenAddress: tokenIn
+                required: formatUnits(amountInParsed, swapInfo.tokenInDecimals),
+                available: formatUnits(swapInfo.balance, swapInfo.tokenInDecimals),
+                tokenAddress: tokenIn,
+                tokenSymbol: swapInfo.tokenInSymbol
               }, null, 2)
             }],
             isError: true
@@ -103,21 +127,14 @@ export function registerSwapTools(server: McpServer) {
         }
 
         // Check allowance
-        const allowance = await publicClient.readContract({
-          address: tokenIn as `0x${string}`,
-          abi: ERC20_ABI,
-          functionName: 'allowance',
-          args: [account.address, DRAGONSWAP_ROUTER as `0x${string}`]
-        }) as bigint;
-
-        if (allowance < amountInParsed) {
+        if (swapInfo.allowance < amountInParsed) {
           return {
             content: [{
               type: "text",
               text: JSON.stringify({
                 error: "Insufficient allowance",
-                required: formatUnits(amountInParsed, tokenInDecimals),
-                current: formatUnits(allowance, tokenInDecimals),
+                required: formatUnits(amountInParsed, swapInfo.tokenInDecimals),
+                current: formatUnits(swapInfo.allowance, swapInfo.tokenInDecimals),
                 suggestion: "Use approve_token tool first",
                 approveCommand: {
                   tool: "approve_token",
@@ -136,12 +153,47 @@ export function registerSwapTools(server: McpServer) {
         // Calculate deadline timestamp
         const deadlineTimestamp = Math.floor(Date.now() / 1000) + (deadline * 60);
 
-        // Determine swap path (direct or through WSEI)
-        const WSEI = "0x0000000000000000000000000000000000000000"; // TODO: Get actual WSEI address
+        // Try to get optimal route from DragonSwap API
         let path: string[];
+        let apiQuoteData: any = null;
+        const wasMinAmountOutProvided = !!minAmountOut;
         
-        // For now, assume direct swap. In production, check if pair exists
-        path = [tokenIn, tokenOut];
+        try {
+          const apiQuote = await DragonSwapApiService.getQuote({
+            tokenIn,
+            tokenOut,
+            amountIn,
+            tokenInDecimals: swapInfo.tokenInDecimals,
+            recipient: account.address,
+            slippage,
+            deadline: 1200,
+            timeoutMs: 10000 // 10 second timeout
+          });
+          
+          // Extract path from API response
+          path = DragonSwapApiService.extractPathFromRoute(apiQuote.route);
+          apiQuoteData = apiQuote;
+          
+          // Calculate minAmountOut if not provided
+          if (!minAmountOut) {
+            minAmountOut = DragonSwapApiService.calculateMinAmountOut(apiQuote.quoteDecimals, slippage);
+            console.log(`Auto-calculated minAmountOut: ${minAmountOut} (${slippage}% slippage)`);
+          }
+          
+          console.log("Using DragonSwap API route:", apiQuote.routeString);
+        } catch (apiError) {
+          console.warn("DragonSwap API failed, using direct route:", apiError);
+          // Fallback to direct swap
+          path = [tokenIn, tokenOut];
+          
+          // If no minAmountOut provided and API failed, we can't continue
+          if (!minAmountOut) {
+            throw new Error("minAmountOut is required when DragonSwap API is unavailable");
+          }
+        }
+
+        // Parse minAmountOut now that we have it (either provided or calculated)
+        const minAmountOutParsed = parseUnits(minAmountOut!, swapInfo.tokenOutDecimals);
 
         // Estimate gas if not provided
         let estimatedGas = gasLimit;
@@ -186,36 +238,7 @@ export function registerSwapTools(server: McpServer) {
           chain: walletClient.chain
         });
 
-        // Wait for transaction confirmation
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-        // Get token info for response
-        const [tokenInInfo, tokenOutInfo] = await Promise.all([
-          Promise.all([
-            publicClient.readContract({
-              address: tokenIn as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'symbol'
-            }),
-            publicClient.readContract({
-              address: tokenIn as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'name'
-            })
-          ]),
-          Promise.all([
-            publicClient.readContract({
-              address: tokenOut as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'symbol'
-            }),
-            publicClient.readContract({
-              address: tokenOut as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: 'name'
-            })
-          ])
-        ]);
 
         return {
           content: [{
@@ -230,17 +253,29 @@ export function registerSwapTools(server: McpServer) {
                 protocol: "DragonSwap",
                 tokenIn: {
                   address: tokenIn,
-                  symbol: tokenInInfo[0],
-                  name: tokenInInfo[1],
-                  amount: amountIn
+                  symbol: swapInfo.tokenInSymbol,
+                  name: swapInfo.tokenInName,
+                  amount: amountIn,
+                  decimals: swapInfo.tokenInDecimals
                 },
                 tokenOut: {
                   address: tokenOut,
-                  symbol: tokenOutInfo[0],
-                  name: tokenOutInfo[1],
-                  minAmount: minAmountOut
+                  symbol: swapInfo.tokenOutSymbol,
+                  name: swapInfo.tokenOutName,
+                  minAmount: minAmountOut,
+                  decimals: swapInfo.tokenOutDecimals
                 },
-                path,
+                route: {
+                  path,
+                  routeString: apiQuoteData?.routeString || `Direct swap: ${swapInfo.tokenInSymbol} -> ${swapInfo.tokenOutSymbol}`,
+                  usedAPI: !!apiQuoteData,
+                  priceImpact: apiQuoteData?.priceImpact || "unknown"
+                },
+                slippage: {
+                  tolerance: `${slippage}%`,
+                  minimumReceived: minAmountOut,
+                  autoCalculated: !wasMinAmountOutProvided
+                },
                 deadline: new Date(deadlineTimestamp * 1000).toISOString()
               },
               wallet: account.address
@@ -263,13 +298,26 @@ export function registerSwapTools(server: McpServer) {
   // Get quote for DragonSwap swap (no transaction)
   server.tool(
     "dragonswap_quote",
-    "Get a quote for a token swap on DragonSwap (read-only)",
+    "Get a quote for a token swap on DragonSwap using API (read-only)",
     {
-      tokenIn: z.string().describe("Input token address"),
-      tokenOut: z.string().describe("Output token address"),
-      amountIn: z.string().describe("Amount of input token")
+      tokenIn: z.string().min(1, "Input token address is required").refine(
+        (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+        { message: "Input token must be a valid Ethereum address" }
+      ),
+      tokenOut: z.string().min(1, "Output token address is required").refine(
+        (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+        { message: "Output token must be a valid Ethereum address" }
+      ),
+      amountIn: z.string().min(1, "Amount of input token is required").refine(
+        (val) => {
+          const num = parseFloat(val);
+          return !isNaN(num) && num > 0;
+        },
+        { message: "Amount must be a valid positive number" }
+      ),
+      slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 0.5)")
     },
-    async ({ tokenIn, tokenOut, amountIn }) => {
+    async ({ tokenIn, tokenOut, amountIn, slippage = 0.5 }) => {
       try {
         if (!shouldFetchProtocolData("dragonswap")) {
           return {
@@ -284,45 +332,49 @@ export function registerSwapTools(server: McpServer) {
           };
         }
 
-        const publicClient = await getPublicClient(DEFAULT_NETWORK);
-        // Get token decimals
-        const [tokenInDecimals, tokenOutDecimals] = await Promise.all([
-          publicClient.readContract({
-            address: tokenIn as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'decimals'
-          }) as Promise<number>,
-          publicClient.readContract({
-            address: tokenOut as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'decimals'
-          }) as Promise<number>
-        ]);
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
+        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
+        const account = walletClient.account;
 
-        // Parse input amount
-        const amountInParsed = parseUnits(amountIn, tokenInDecimals);
+        if (!account) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "No wallet account found. Please connect your wallet."
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
 
-        // Define the path for swapping
-        const path = [tokenIn as `0x${string}`, tokenOut as `0x${string}`];
+        // Get token decimals and info using multicall3
+        const multicallService = new MulticallService(publicClient, 1329);
+        const { tokenInDecimals, tokenOutDecimals, tokenInSymbol, tokenOutSymbol } = await multicallService.getTokenBasicInfo(
+          tokenIn as `0x${string}`,
+          tokenOut as `0x${string}`
+        );
+
+        console.log(`Token info retrieved:`, {
+          tokenIn: { address: tokenIn, decimals: tokenInDecimals, symbol: tokenInSymbol },
+          tokenOut: { address: tokenOut, decimals: tokenOutDecimals, symbol: tokenOutSymbol }
+        });
 
         try {
-          // Get quote from router using getAmountsOut
-          const amounts = await publicClient.readContract({
-            address: DRAGONSWAP_ROUTER as `0x${string}`,
-            abi: DRAGONSWAP_ROUTER_ABI,
-            functionName: 'getAmountsOut',
-            args: [amountInParsed, path]
-          }) as bigint[];
+          // Get quote from DragonSwap API
+          const apiQuote = await DragonSwapApiService.getQuote({
+            tokenIn,
+            tokenOut,
+            amountIn,
+            tokenInDecimals,
+            recipient: account.address,
+            slippage,
+            deadline: 1200
+          });
 
-          // amounts[0] = input amount
-          // amounts[1] = output amount
-          const amountOut = amounts[1];
-          const formattedAmountOut = formatUnits(amountOut, tokenOutDecimals);
-
-          // Calculate price impact (simplified)
-          const inputValue = parseFloat(amountIn);
-          const outputValue = parseFloat(formattedAmountOut);
-          const rate = outputValue / inputValue;
+          // Extract route path
+          const routePath = DragonSwapApiService.extractPathFromRoute(apiQuote.route);
+          const minAmountOut = DragonSwapApiService.calculateMinAmountOut(apiQuote.quoteDecimals, slippage);
 
           return {
             content: [{
@@ -330,44 +382,43 @@ export function registerSwapTools(server: McpServer) {
               text: JSON.stringify({
                 quote: {
                   protocol: "DragonSwap",
-                  inputToken: tokenIn,
-                  outputToken: tokenOut,
-                  inputAmount: amountIn,
-                  estimatedOutput: formattedAmountOut,
-                  rate: `1 input = ${rate.toFixed(6)} output`,
-                  route: path,
-                  router: DRAGONSWAP_ROUTER
+                  inputToken: {
+                    address: tokenIn,
+                    symbol: tokenInSymbol,
+                    amount: amountIn
+                  },
+                  outputToken: {
+                    address: tokenOut,
+                    symbol: tokenOutSymbol,
+                    estimatedAmount: apiQuote.quoteDecimals
+                  },
+                  route: {
+                    path: routePath,
+                    routeString: apiQuote.routeString,
+                    pools: apiQuote.route[0]?.length || 0
+                  },
+                  pricing: {
+                    priceImpact: `${apiQuote.priceImpact}%`,
+                    gasEstimate: apiQuote.gasUseEstimate,
+                    gasEstimateUSD: apiQuote.gasUseEstimateUSD
+                  },
+                  slippage: {
+                    tolerance: `${slippage}%`,
+                    minimumReceived: minAmountOut
+                  }
                 },
-                calculation: {
-                  inputAmountParsed: amountInParsed.toString(),
-                  outputAmountParsed: amountOut.toString(),
-                  inputDecimals: tokenInDecimals,
-                  outputDecimals: tokenOutDecimals
-                },
-                minimumReceived: {
-                  withSlippage_1pct: (parseFloat(formattedAmountOut) * 0.99).toFixed(6),
-                  withSlippage_2pct: (parseFloat(formattedAmountOut) * 0.98).toFixed(6),
-                  withSlippage_5pct: (parseFloat(formattedAmountOut) * 0.95).toFixed(6)
+                apiResponse: {
+                  methodParameters: apiQuote.methodParameters,
+                  blockNumber: apiQuote.blockNumber,
+                  hitsCachedRoutes: apiQuote.hitsCachedRoutes
                 }
               }, null, 2)
             }]
           };
 
-        } catch (contractError) {
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                error: "Quote failed - likely no liquidity pool exists",
-                details: contractError instanceof Error ? contractError.message : String(contractError),
-                inputToken: tokenIn,
-                outputToken: tokenOut,
-                inputAmount: amountIn,
-                suggestion: "Check if a liquidity pool exists for this token pair on DragonSwap"
-              }, null, 2)
-            }],
-            isError: true
-          };
+        } catch (apiError) {
+          console.error("DragonSwap API failed:", apiError);
+          throw new Error(`DragonSwap API failed: ${apiError instanceof Error ? apiError.message : String(apiError)}`);
         }
 
       } catch (error) {

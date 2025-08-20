@@ -39,7 +39,7 @@ export const SEI_TOKENS: SEITokens = {
     coingeckoId: "usd-coin"
   },
   USDT: {
-    address: "0x0000000000000000000000000000000000000000", // TODO: Get real address
+    address: "0x9151434b16b9763660705744891fA906F660EcC5", 
     symbol: "USDT",
     name: "Tether USD",
     decimals: 6,
@@ -80,7 +80,7 @@ export const SEI_TOKENS: SEITokens = {
 /**
  * Base currency for arbitrage calculations
  */
-export const BASE_CURRENCY = SEI_TOKENS.USDC;
+export const BASE_CURRENCY = SEI_TOKENS.USDT;
 
 /**
  * Get token config by address

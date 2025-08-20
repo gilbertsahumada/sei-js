@@ -33,7 +33,6 @@ export interface TokenContracts {
 export class ContractAddresses {
   private chainId: number;
 
-  // DEX contract addresses by protocol
   private static readonly DEX_CONTRACTS: { [chainId: number]: { [dex: string]: DexContracts } } = {
     // Sei Mainnet (1329)
     1329: {
@@ -89,7 +88,6 @@ export class ContractAddresses {
     }
   };
 
-  // Token contract addresses by chain
   private static readonly TOKEN_CONTRACTS: { [chainId: number]: TokenContracts } = {
     // Sei Mainnet (1329)
     1329: {
@@ -114,6 +112,15 @@ export class ContractAddresses {
       YAKA: "0x0000000000000000000000000000000000000000",
     }
   };
+
+  private static readonly UTILS_ADDRESSES: { [chainId: number]: { [name: string]: Address } } = { 
+    1329: {
+      multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11"
+    },
+    1328: {
+      multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11" // Same address on testnet
+    }
+  }
 
   constructor(chainId: number = 1329) {
     this.chainId = chainId;
@@ -168,11 +175,6 @@ export class ContractAddresses {
     return contracts.multicall || null;
   }
 
-  // Token Contract Getters
-
-  /**
-   * Get all token contracts for current chain
-   */
   getTokenContracts(): TokenContracts {
     const contracts = ContractAddresses.TOKEN_CONTRACTS[this.chainId];
     if (!contracts) {
@@ -181,9 +183,6 @@ export class ContractAddresses {
     return contracts;
   }
 
-  /**
-   * Get specific token address by symbol
-   */
   getTokenAddress(symbol: string): Address {
     const contracts = this.getTokenContracts();
     const address = contracts[symbol.toUpperCase()];
@@ -193,54 +192,42 @@ export class ContractAddresses {
     return address;
   }
 
-  /**
-   * Get WSEI (Wrapped SEI) address
-   */
   getWSEIAddress(): Address {
     return this.getTokenAddress("WSEI");
   }
 
-  /**
-   * Get USDC address
-   */
   getUSDCAddress(): Address {
     return this.getTokenAddress("USDC");
   }
 
-  /**
-   * Get USDT address
-   */
   getUSDTAddress(): Address {
     return this.getTokenAddress("USDT");
   }
 
-  /**
-   * Get DragonSwap token address
-   */
   getDRGAddress(): Address {
     return this.getTokenAddress("DRG");
   }
 
-  /**
-   * Get Yaka Finance token address
-   */
   getYAKAAddress(): Address {
     return this.getTokenAddress("YAKA");
   }
 
-  // Utility Methods
-
   /**
-   * Check if a token address is known
+   * Get Multicall3 address for the current chain
    */
+  getMulticall3Address(): Address {
+    const utils = ContractAddresses.UTILS_ADDRESSES[this.chainId];
+    if (!utils?.multicall3) {
+      throw new Error(`No Multicall3 address found for chain ${this.chainId}`);
+    }
+    return utils.multicall3;
+  }
+
   isKnownToken(address: Address): boolean {
     const contracts = this.getTokenContracts();
     return Object.values(contracts).includes(address);
   }
 
-  /**
-   * Get token symbol by address (if known)
-   */
   getTokenSymbol(address: Address): string | null {
     const contracts = this.getTokenContracts();
     for (const [symbol, contractAddress] of Object.entries(contracts)) {
@@ -251,32 +238,21 @@ export class ContractAddresses {
     return null;
   }
 
-  /**
-   * Get all available DEX names for current chain
-   */
   getAvailableDexes(): string[] {
     const dexContracts = ContractAddresses.DEX_CONTRACTS[this.chainId];
     return dexContracts ? Object.keys(dexContracts) : [];
   }
 
-  /**
-   * Get all available token symbols for current chain
-   */
   getAvailableTokens(): string[] {
     const tokenContracts = this.getTokenContracts();
     return Object.keys(tokenContracts);
   }
 
-  /**
-   * Validate if address looks like a valid contract address
-   */
+
   isValidAddress(address: string): boolean {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
   }
 
-  /**
-   * Check if address is a placeholder (all zeros, ones, or twos)
-   */
   isPlaceholderAddress(address: Address): boolean {
     return (
       address === "0x0000000000000000000000000000000000000000" ||
@@ -285,39 +261,22 @@ export class ContractAddresses {
     );
   }
 
-  /**
-   * Get current chain ID
-   */
   getChainId(): number {
     return this.chainId;
   }
 
-  /**
-   * Switch to different chain
-   */
   switchChain(chainId: number): void {
     this.chainId = chainId;
   }
 
-  // Static methods for quick access
-
-  /**
-   * Quick access to mainnet contracts
-   */
   static mainnet(): ContractAddresses {
     return new ContractAddresses(1329);
   }
 
-  /**
-   * Quick access to testnet contracts
-   */
   static testnet(): ContractAddresses {
     return new ContractAddresses(1328);
   }
 
-  /**
-   * Get all supported chain IDs
-   */
   static getSupportedChains(): number[] {
     return Object.keys(ContractAddresses.DEX_CONTRACTS).map(Number);
   }

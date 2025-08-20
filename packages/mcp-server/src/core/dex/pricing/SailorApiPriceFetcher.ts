@@ -89,9 +89,10 @@ export class SailorApiPriceFetcher {
     try {
       console.log(`Fetching Sailor prices for ${tokenAddresses.length} tokens...`);
       
-      // Format addresses as comma-separated string
       const tokensParam = tokenAddresses.join(",");
       const url = `${SailorApiPriceFetcher.API_BASE}/getPriceList?tokens=${tokensParam}`;
+
+      console.log(`Requesting Sailor prices from: ${url}`);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -122,13 +123,11 @@ export class SailorApiPriceFetcher {
   async getAllTokens(): Promise<SailorPriceToken[]> {
     const now = Date.now();
     
-    // Return cached data if still fresh
     if (this.tokensCache && (now - this.cacheTimestamp) < this.CACHE_DURATION) {
       return this.tokensCache;
     }
     
     try {
-      // Get complete token list from API
       const tokenList = await this.getTokenList();
       
       if (tokenList.length === 0) {
@@ -136,10 +135,8 @@ export class SailorApiPriceFetcher {
         return this.tokensCache || [];
       }
       
-      // Extract token addresses
       const tokenAddresses = tokenList.map(token => token.id);
       
-      // Get prices for all tokens (API can handle large lists)
       const prices = await this.getTokenPrices(tokenAddresses);
       
       this.tokensCache = prices;

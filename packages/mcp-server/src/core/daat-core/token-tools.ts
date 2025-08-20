@@ -349,7 +349,7 @@ export function registerTokenTools(server: McpServer) {
     }
   );
 
-  // Find tokens that exist across DragonSwap, Yaka Finance, and Sailor Finance for arbitrage
+  // Find tokens that exist across enabled Protocols (DragonSwap, Yaka Finance, and Sailor Finance for arbitrage)
   server.tool(
     "find_common_tokens",
     "Find tokens that exist across DragonSwap, Yaka Finance, and Sailor Finance APIs",
@@ -359,7 +359,7 @@ export function registerTokenTools(server: McpServer) {
     },
     async ({ minPrice = 0, limit = 50 }) => {
       try {
-        // Check which protocols are enabled and fetch data accordingly
+
         const enabledProtocols = protocolConfig.getEnabledProtocols();
         
         if (enabledProtocols.length < 2) {
@@ -377,7 +377,6 @@ export function registerTokenTools(server: McpServer) {
           };
         }
 
-        // Fetch data only from enabled protocols
         const fetchPromises: Promise<any>[] = [];
         const protocolNames: string[] = [];
 
@@ -748,8 +747,10 @@ export function registerTokenTools(server: McpServer) {
         
         let tokens;
         if (tokenAddresses && tokenAddresses.length > 0) {
+          //console.log(`Fetching prices for ${tokenAddresses.length} specific tokens...`);
           tokens = await fetcher.getTokenPrices(tokenAddresses);
         } else {
+          //console.log(`Fetching prices for all tokens (limit: ${limit})...`);
           tokens = await fetcher.getAllTokens();
         }
         
