@@ -37,23 +37,35 @@ export class StreamableHttpTransport implements McpTransport {
 
 		this.app.post(this.path, async (req: Request, res: Response) => {
 			try {
+				console.log('🚀 MCP Request received:', {
+					method: req.method,
+					path: req.path,
+					headers: req.headers,
+					body: JSON.stringify(req.body).substring(0, 200) + '...'
+				});
+
 				// Create fresh MCP server for this request (stateless design)
+				console.log('📋 Creating fresh MCP server instance...');
 				const mcpServer = await getServer();
+				console.log('✅ MCP server created successfully');
 				
 				const transport = new StreamableHTTPServerTransport({
 					sessionIdGenerator: undefined // For stateless servers
 				});
 
 				res.on('close', () => {
-					console.log('Request closed');
+					console.log('🔌 Request closed');
 					transport.close();
 					mcpServer.close();
 				});
 
+				console.log('🔌 Connecting MCP server to transport...');
 				await mcpServer.connect(transport);
+				console.log('📡 Handling MCP request...');
 				await transport.handleRequest(req, res, req.body);
+				console.log('✅ MCP request handled successfully');
 			} catch (error) {
-				console.error('Error handling MCP request:', error);
+				console.error('❌ Error handling MCP request:', error);
 				if (!res.headersSent) {
 					res.status(500).json({
 						jsonrpc: '2.0',

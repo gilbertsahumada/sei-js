@@ -8,6 +8,7 @@ export const main = async () => {
 		const config = parseArgs();
 		const server = await getServer();
 		const transport = createTransport(config);
+		console.log('Starting MCP server with transport:', transport);
 		await transport.start(server);
 
 		if (!isWalletEnabled()) console.error('Wallet functionality is disabled. Wallet-dependent tools will not be available.');

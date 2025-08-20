@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerEVMTools } from '../core/tools.js';
 import { registerEVMResources } from '../core/resources.js';
 import { registerEVMPrompts } from '../core/prompts.js';
-import { createSeiJSDocsSearchTool } from '../mintlify/search.js';
+//import { createSeiJSDocsSearchTool } from '../mintlify/search.js';
 import { getPackageInfo } from './package-info.js';
 import { getSupportedNetworks } from '../core/chains.js';
 import { createDocsSearchTool } from '../docs/index.js';
@@ -17,6 +17,7 @@ export const getServer = async () => {
 			version: packageInfo.version
 		});
 
+
 		registerEVMResources(server);
 		registerEVMTools(server);
 		registerEVMPrompts(server);
@@ -24,7 +25,7 @@ export const getServer = async () => {
 		registerTokenTools(server);
 		registerSwapTools(server);
 
-		await createSeiJSDocsSearchTool(server);
+		//await createSeiJSDocsSearchTool(server);
 
 		// Wrap docs search tool creation in try-catch to handle API rate limiting
 		// TODO: move this into trieve like the sei-js docs search tool
