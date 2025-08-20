@@ -4,6 +4,10 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Send, Bot, User } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github.css';
 
 export default function Home() {
   const [input, setInput] = useState('');
@@ -77,8 +81,37 @@ export default function Home() {
                     <div className="space-y-2">
                       {message.parts.map((part, i) => 
                         part.type === 'text' ? (
-                          <div key={`${message.id}-${i}`} className="text-sm leading-relaxed whitespace-pre-wrap">
-                            {part.text}
+                          <div key={`${message.id}-${i}`} className="text-sm leading-relaxed">
+                            {message.role === 'user' ? (
+                              // For user messages, just show plain text
+                              <div className="whitespace-pre-wrap">{part.text}</div>
+                            ) : (
+                              // For assistant messages, render markdown
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                rehypePlugins={[rehypeHighlight]}
+                                components={{
+                                  h1: ({ children }) => <h1 className="text-lg font-bold text-slate-800 mb-2">{children}</h1>,
+                                  h2: ({ children }) => <h2 className="text-base font-semibold text-slate-800 mb-2">{children}</h2>,
+                                  h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-800 mb-1">{children}</h3>,
+                                  p: ({ children }) => <p className="text-slate-700 mb-2">{children}</p>,
+                                  strong: ({ children }) => <strong className="font-bold text-slate-800">{children}</strong>,
+                                  em: ({ children }) => <em className="italic text-slate-700">{children}</em>,
+                                  code: ({ children }) => <code className="bg-slate-100 text-slate-800 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                                  pre: ({ children }) => <pre className="bg-slate-100 p-3 rounded-lg overflow-x-auto mb-2 text-sm">{children}</pre>,
+                                  ul: ({ children }) => <ul className="list-disc ml-4 mb-2 space-y-1">{children}</ul>,
+                                  ol: ({ children }) => <ol className="list-decimal ml-4 mb-2 space-y-1">{children}</ol>,
+                                  li: ({ children }) => <li className="text-slate-700">{children}</li>,
+                                  blockquote: ({ children }) => (
+                                    <blockquote className="border-l-4 border-blue-300 pl-4 italic text-slate-600 mb-2">
+                                      {children}
+                                    </blockquote>
+                                  ),
+                                }}
+                              >
+                                {part.text}
+                              </ReactMarkdown>
+                            )}
                           </div>
                         ) : null
                       )}
