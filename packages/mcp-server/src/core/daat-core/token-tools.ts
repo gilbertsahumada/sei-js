@@ -11,7 +11,7 @@ import { protocolConfig, shouldFetchProtocolData } from "./protocol-config.js";
  */
 export function registerTokenTools(server: McpServer) {
   console.log("🔧 Registering token tools...");
-  // Get tokens with prices from DragonSwap API (SIMPLE VERSION)
+
   server.tool(
     "get_dragonswap_prices",
     "Get DragonSwap tokens with real-time prices - USE ONLY when user specifically asks for DragonSwap prices or market data. DO NOT use for arbitrage analysis.",
@@ -412,14 +412,43 @@ export function registerTokenTools(server: McpServer) {
     "find_arbitrage_opportunities",
     "PRIMARY ARBITRAGE TOOL: Use this when users ask about arbitrage opportunities, price spreads, or profit opportunities. Analyzes ALL DEXs simultaneously and returns complete arbitrage data with contract addresses. ALWAYS show the contract addresses in your response - users need them for trading. DO NOT use other price tools when user asks for arbitrage.",
     {
-      minSpread: z.number().describe("Minimum price spread percentage required (e.g., 2 for 2%, 1 for 1%, 0.5 for 0.5%)"),
+      minSpread: z.number().min(0).describe("REQUIRED: Minimum price spread percentage for arbitrage opportunities. Use 0.5 for 0.5%, 1 for 1%, 2 for 2%, etc. Typical values: 0.5-5"),
       minPrice: z.number().optional().describe("Minimum token price in USD (default: 0.01)"),
       limit: z.number().optional().describe("Max number of opportunities to return (default: 20)")
     },
     async ({ minSpread, minPrice = 0.01, limit = 20 }) => {
-      console.log("🔧[TOOL_find_arbitrage_opportunities]");
+      console.log("🔧[TOOL_find_arbitrage_opportunities] Called with params");
+
       try {
-        // Check which protocols are enabled
+        if (minSpread === undefined || minSpread === null) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "minSpread parameter is required",
+                received: minSpread,
+                suggestion: "Please provide a minimum spread percentage (e.g., 1 for 1%, 2 for 2%)"
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        if (typeof minSpread !== 'number' || minSpread < 0) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "minSpread must be a positive number",
+                received: minSpread,
+                type: typeof minSpread,
+                suggestion: "Please provide a valid spread percentage (e.g., 1 for 1%, 2 for 2%)"
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
         const enabledProtocols = protocolConfig.getEnabledProtocols();
 
         if (enabledProtocols.length < 2) {
@@ -437,7 +466,6 @@ export function registerTokenTools(server: McpServer) {
           };
         }
 
-        // Fetch data only from enabled protocols
         const fetchPromises: Promise<any>[] = [];
         const protocolNames: string[] = [];
 
@@ -583,7 +611,26 @@ export function registerTokenTools(server: McpServer) {
                 ...opp,
                 availableProtocols: opp.availableProtocols,
                 protocolCount: opp.availableProtocols.length
-              }))
+              })),
+              /*
+              tradingStrategy: {
+                steps: [
+                  "1. APPROVE: First approve token spending on the source DEX using approve_token_spending tool",
+                  "2. BUY: Purchase tokens on the cheaper DEX (buyOn protocol)",
+                  "3. TRANSFER: Move tokens to the more expensive DEX",
+                  "4. SELL: Sell tokens on the expensive DEX (sellOn protocol)",
+                  "5. PROFIT: Collect the price difference minus gas fees"
+                ],
+                importantReminders: [
+                  "ALWAYS execute approve_token_spending BEFORE any trades",
+                  "Calculate gas fees - they can eat into profits",
+                  "Prices change rapidly - execute quickly",
+                  "Use small amounts for testing first",
+                  "Monitor slippage on both DEXs"
+                ],
+                riskWarning: "Arbitrage involves smart contract interactions and market risks. Test with small amounts first."
+              }
+              */
             }, null, 2)
           }]
         };

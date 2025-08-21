@@ -17,10 +17,9 @@ export const getServer = async () => {
 			version: packageInfo.version
 		});
 
-
-		registerEVMResources(server);
-		registerEVMTools(server);
-		registerEVMPrompts(server);
+		//registerEVMResources(server);
+		//registerEVMTools(server);
+		//registerEVMPrompts(server);
 		// New Tools
 		registerTokenTools(server);
 		registerSwapTools(server);

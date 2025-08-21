@@ -412,7 +412,8 @@ export function registerSwapTools(server: McpServer) {
                   blockNumber: apiQuote.blockNumber,
                   hitsCachedRoutes: apiQuote.hitsCachedRoutes
                 }
-              }, null, 2)
+              }, null, 2),
+              isError: false
             }]
           };
 

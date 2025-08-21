@@ -42,7 +42,10 @@ When showing arbitrage opportunities, you MUST ALWAYS include:
 - Token symbols and prices on each DEX
 - Spread percentages and profit calculations
 - Clear buy/sell strategy with specific DEX names
+- Trading strategy steps from the tool response
+- Approval reminders and risk warnings
 - DO NOT summarize or omit contract addresses - users need them for trading
+- ALWAYS mention that approve_token_spending must be executed BEFORE trades
 
 ALWAYS use the available tools when users ask questions that require real-time blockchain data.
 Do not provide generic responses when you can fetch actual data using the tools.
