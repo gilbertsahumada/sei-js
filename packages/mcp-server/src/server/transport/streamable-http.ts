@@ -37,12 +37,14 @@ export class StreamableHttpTransport implements McpTransport {
 
 		this.app.post(this.path, async (req: Request, res: Response) => {
 			try {
+				/*
 				console.log('🚀 MCP Request received:', {
 					method: req.method,
 					path: req.path,
 					headers: req.headers,
 					body: JSON.stringify(req.body).substring(0, 200) + '...'
 				});
+				*/
 
 				// Create fresh MCP server for this request (stateless design)
 				console.log('📋 Creating fresh MCP server instance...');

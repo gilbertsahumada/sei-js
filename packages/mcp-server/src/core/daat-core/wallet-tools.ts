@@ -305,49 +305,6 @@ export function registerWalletTools(server: McpServer) {
     }
   );
 
-  // Check my wallet's SEI balance
-  server.tool(
-    "check_my_sei_balance",
-    "Check SEI (native token) balance of my wallet (from PRIVATE_KEY in environment)",
-    {},
-    async () => {
-      try {
-        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
-        const publicClient = getPublicClient(DEFAULT_NETWORK);
-        const account = walletClient.account;
-        if (!account) {
-          throw new Error("No wallet account found. Ensure PRIVATE_KEY is set in environment.");
-        }
-        const balance = await publicClient.getBalance({
-          address: account.address
-        });
-
-        const formattedBalance = formatUnits(balance, 18); // SEI has 18 decimals
-
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              wallet: account.address,
-              balance: {
-                raw: balance.toString(),
-                formatted: formattedBalance,
-                display: `${formattedBalance} SEI`
-              }
-            }, null, 2)
-          }]
-        };
-      } catch (error) {
-        return {
-          content: [{
-            type: "text",
-            text: `Error checking my SEI balance: ${error instanceof Error ? error.message : String(error)}`
-          }],
-          isError: true
-        };
-      }
-    }
-  );
 
   // Approve token for spending (uses env PRIVATE_KEY)
   server.tool(

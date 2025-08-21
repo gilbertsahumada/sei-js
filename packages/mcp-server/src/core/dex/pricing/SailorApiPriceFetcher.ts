@@ -92,7 +92,7 @@ export class SailorApiPriceFetcher {
       const tokensParam = tokenAddresses.join(",");
       const url = `${SailorApiPriceFetcher.API_BASE}/getPriceList?tokens=${tokensParam}`;
 
-      console.log(`Requesting Sailor prices from: ${url}`);
+      console.log(`Requesting Sailor Prices`);
       
       const response = await fetch(url, {
         method: 'GET',

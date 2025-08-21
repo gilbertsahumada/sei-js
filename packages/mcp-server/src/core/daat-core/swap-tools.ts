@@ -8,9 +8,7 @@ import { DEFAULT_NETWORK } from "../chains.js";
 import { DragonSwapApiService } from "../dex/pricing/DragonSwapApiService.js";
 import { MulticallService } from "../services/MulticallService.js";
 
-
 const DRAGONSWAP_ROUTER = DRAGONSWAP_ROUTER_ADDRESS;
-
 // USDT = 0x9151434b16b9763660705744891fA906F660EcC5
 // USDC = 0xe15fc38f6d8c56af07bbcbe3baf5708a2bf42392
 // FXS = 0x64445f0aecc51e94ad52d8ac56b7190e764e561a
@@ -52,6 +50,7 @@ export function registerSwapTools(server: McpServer) {
       ).describe("Gas price override in wei (default: current)")
     },
     async ({ tokenIn, tokenOut, amountIn, minAmountOut, slippage = 0.5, deadline = 20, gasLimit, gasPrice }) => {
+      console.log("🔧[TOOL_dragonswap_swap]");
       try {
         if (!shouldFetchProtocolData("dragonswap")) {
           return {
@@ -318,6 +317,7 @@ export function registerSwapTools(server: McpServer) {
       slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 0.5)")
     },
     async ({ tokenIn, tokenOut, amountIn, slippage = 0.5 }) => {
+      console.log("🔧[TOOL_dragonswap_quote]");
       try {
         if (!shouldFetchProtocolData("dragonswap")) {
           return {

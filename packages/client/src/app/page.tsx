@@ -4,9 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Send, Bot, User } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
+import { Streamdown } from 'streamdown';
 import 'highlight.js/styles/github.css';
 
 export default function Home() {
@@ -37,7 +35,7 @@ export default function Home() {
       {/* Chat Container */}
       <div className="max-w-4xl mx-auto px-6 py-8">
         <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 overflow-hidden">
-          
+
           {/* Messages Area */}
           <div className="h-[500px] overflow-y-auto p-6 space-y-4">
             {messages.length === 0 ? (
@@ -49,7 +47,7 @@ export default function Home() {
                   Welcome to Sei MCP Agent
                 </h3>
                 <p className="text-slate-600 max-w-md">
-                  I'm your specialized assistant for arbitrage opportunities on the Sei blockchain. 
+                  I'm your specialized assistant for arbitrage opportunities on the Sei blockchain.
                   Ask me about DEX prices, trading strategies, or risk management.
                 </p>
               </div>
@@ -60,11 +58,10 @@ export default function Home() {
                   className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
                 >
                   {/* Avatar */}
-                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                    message.role === 'user' 
-                      ? 'bg-gradient-to-br from-blue-500 to-indigo-600' 
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.role === 'user'
+                      ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
                       : 'bg-gradient-to-br from-slate-600 to-slate-700'
-                  }`}>
+                    }`}>
                     {message.role === 'user' ? (
                       <User className="w-4 h-4 text-white" />
                     ) : (
@@ -73,13 +70,12 @@ export default function Home() {
                   </div>
 
                   {/* Message Bubble */}
-                  <div className={`max-w-[75%] ${
-                    message.role === 'user' 
-                      ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white' 
+                  <div className={`max-w-[75%] ${message.role === 'user'
+                      ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white'
                       : 'bg-white border border-slate-200 text-slate-900'
-                  } rounded-2xl px-4 py-3 shadow-sm`}>
+                    } rounded-2xl px-4 py-3 shadow-sm`}>
                     <div className="space-y-2">
-                      {message.parts.map((part, i) => 
+                      {message.parts.map((part, i) =>
                         part.type === 'text' ? (
                           <div key={`${message.id}-${i}`} className="text-sm leading-relaxed">
                             {message.role === 'user' ? (
@@ -87,30 +83,10 @@ export default function Home() {
                               <div className="whitespace-pre-wrap">{part.text}</div>
                             ) : (
                               // For assistant messages, render markdown
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
-                                rehypePlugins={[rehypeHighlight]}
-                                components={{
-                                  h1: ({ children }) => <h1 className="text-lg font-bold text-slate-800 mb-2">{children}</h1>,
-                                  h2: ({ children }) => <h2 className="text-base font-semibold text-slate-800 mb-2">{children}</h2>,
-                                  h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-800 mb-1">{children}</h3>,
-                                  p: ({ children }) => <p className="text-slate-700 mb-2">{children}</p>,
-                                  strong: ({ children }) => <strong className="font-bold text-slate-800">{children}</strong>,
-                                  em: ({ children }) => <em className="italic text-slate-700">{children}</em>,
-                                  code: ({ children }) => <code className="bg-slate-100 text-slate-800 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
-                                  pre: ({ children }) => <pre className="bg-slate-100 p-3 rounded-lg overflow-x-auto mb-2 text-sm">{children}</pre>,
-                                  ul: ({ children }) => <ul className="list-disc ml-4 mb-2 space-y-1">{children}</ul>,
-                                  ol: ({ children }) => <ol className="list-decimal ml-4 mb-2 space-y-1">{children}</ol>,
-                                  li: ({ children }) => <li className="text-slate-700">{children}</li>,
-                                  blockquote: ({ children }) => (
-                                    <blockquote className="border-l-4 border-blue-300 pl-4 italic text-slate-600 mb-2">
-                                      {children}
-                                    </blockquote>
-                                  ),
-                                }}
-                              >
+
+                              <Streamdown key={i} >
                                 {part.text}
-                              </ReactMarkdown>
+                              </Streamdown>
                             )}
                           </div>
                         ) : null
@@ -152,7 +128,7 @@ export default function Home() {
                 <Send className="w-4 h-4" />
               </Button>
             </form>
-            
+
             {/* Quick Actions */}
             <div className="flex flex-wrap gap-2 mt-4">
               {[

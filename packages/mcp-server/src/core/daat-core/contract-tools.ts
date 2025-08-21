@@ -64,7 +64,6 @@ export function registerContractTools(server: McpServer) {
         const contracts = new ContractAddresses(chainId);
         const dexContracts = contracts.getDexContracts(dexName);
         
-        // Check if addresses are placeholders
         const isPlaceholder = contracts.isPlaceholderAddress(dexContracts.router);
 
         return {

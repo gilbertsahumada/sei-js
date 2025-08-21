@@ -14,7 +14,7 @@ export interface TokenContracts {
   
   // Stablecoins
   USDC: Address;
-  //USDT: Address;
+  USDT: Address;
   
   // DEX native tokens
   DRG: Address;   // DragonSwap token
@@ -54,7 +54,7 @@ export class ContractAddresses {
         factory: "0xEdbBc263C74865e67C6b16F47740Fa3901b95Ae1", // Yaka V3 Pair Factory
         quoter: "0x2222222222222222222222222222222222222222", // TODO: Find Yaka quoter
         positionManager: "0x2222222222222222222222222222222222222222", // TODO: Find Yaka position manager
-        multicall: "0x2222222222222222222222222222222222222222" // TODO: Add multicall if available
+        multicall: "0x2222222222222222222222222222222222222222" 
       },
       Oku: {
         router: "0xdD489C75be1039ec7d843A6aC2Fd658350B067Cf", // Swap Router02
@@ -96,7 +96,7 @@ export class ContractAddresses {
       
       // Stablecoins
       USDC: "0x4fCF1784B31630811181f670Aea7A7bEF803eaED", 
-      //USDT: "0x0000000000000000000000000000000000000000", 
+      USDT: "0x9151434b16b9763660705744891fA906F660EcC5", 
       
       // DEX tokens
       DRG: "0x0000000000000000000000000000000000000000",  
@@ -107,7 +107,7 @@ export class ContractAddresses {
     1328: {
       WSEI: "0x0000000000000000000000000000000000000000",
       USDC: "0x0000000000000000000000000000000000000000",
-      //USDT: "0x0000000000000000000000000000000000000000",
+      USDT: "0x0000000000000000000000000000000000000000",
       DRG: "0x0000000000000000000000000000000000000000",
       YAKA: "0x0000000000000000000000000000000000000000",
     }
