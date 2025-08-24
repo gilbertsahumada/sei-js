@@ -215,6 +215,24 @@ yarn workspace @sei-js/client dev      # Client only
 yarn biome check --apply
 ```
 
+### Development Experience Improvements
+**Concurrently Integration:**
+- **Color-coded Output**: Blue prefix for MCP-SERVER, green for CLIENT
+- **Process Management**: Single command starts both services
+- **Hot Reload**: Both server and client auto-restart on changes
+- **Synchronized Logging**: Easy to track both services in one terminal
+
+**Example Output:**
+```bash
+$ yarn dev:mcp-client
+
+[MCP-SERVER] MCP Server starting on port 8080...
+[CLIENT] ▲ Next.js 15.4.7
+[CLIENT] - Local:        http://localhost:3000
+[MCP-SERVER] ✓ Server ready with arbitrage tools
+[CLIENT] ✓ Ready in 1.2s
+```
+
 ### Testing & Quality Assurance
 - **TypeScript**: Strict mode enabled with comprehensive type safety
 - **Biome**: Code formatting (tabs, 160 char width) and linting
