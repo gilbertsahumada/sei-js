@@ -126,6 +126,7 @@ export class SailorApiService {
 			
 			clearTimeout(timeoutId);
 			
+			// NOTE: Sailor API returns an error when route doesn't exist
 			if (!response.ok) {
 				const errorText = await response.text().catch(() => 'Unknown error');
 				console.error(`Sailor API error:`, {
@@ -138,23 +139,15 @@ export class SailorApiService {
 				throw new Error(`Sailor API error: ${response.status} ${response.statusText} - ${errorText}`);
 			}
 
+			console.log(`Sailor API: Parsing response...`);
 			const data: any = await response.json();
-			
-			// Check if the response indicates no route found
-			if (!data.success || data.error) {
-				throw new Error(`No trading route found for ${tokenIn} -> ${tokenOut} on Sailor Finance. ${data.error || 'This pair may not have liquidity.'}`);
-			}
-			
-			// Validate response structure
-			if (!data.route || !Array.isArray(data.route) || data.route.length === 0) {
-				throw new Error(`Invalid route response from Sailor API`);
-			}
+			console.log(`Sailor API: Response data:`, data);
 			
 			console.log(`Sailor API: Quote successful for ${amountIn} ${tokenIn} -> ${tokenOut}`, {
-				estimatedOutput: data.total_amount_out,
+				input: data.quote.input.amount,
+				estimatedOutput: data.quote.output.amount,
 				priceImpact: data.total_price_impact,
-				routeHops: data.route.length,
-				minimumOut: data.minimum_amount_out
+				routeHops: data.quote.route.length
 			});
 
 			// Transform response to match our interface
@@ -173,6 +166,7 @@ export class SailorApiService {
 			return sailorResponse;
 			
 		} catch (error) {
+			console.log(`Sailor API: Caught error`, error);
 			clearTimeout(timeoutId);
 			
 			if (error instanceof Error) {
