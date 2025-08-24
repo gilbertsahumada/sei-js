@@ -29,6 +29,8 @@ export interface SailorQuoteResponse {
 	estimated_gas: string;
 	slippage_tolerance: string;
 	minimum_amount_out: string;
+	maxPriorityFeePerGas?: string;
+	maxFeePerGas?: string;
 	error?: string;
 }
 
@@ -139,28 +141,43 @@ export class SailorApiService {
 				throw new Error(`Sailor API error: ${response.status} ${response.statusText} - ${errorText}`);
 			}
 
-			console.log(`Sailor API: Parsing response...`);
 			const data: any = await response.json();
-			console.log(`Sailor API: Response data:`, data);
 			
+			/*
 			console.log(`Sailor API: Quote successful for ${amountIn} ${tokenIn} -> ${tokenOut}`, {
 				input: data.quote.input.amount,
 				estimatedOutput: data.quote.output.amount,
 				priceImpact: data.total_price_impact,
 				routeHops: data.quote.route.length
 			});
+			*/
 
-			// Transform response to match our interface
+			// Transform response to match our interface  
+			// Sailor API structure: data.quote.route[0] contains the actual route
+			const quote = data.quote || {};
+			const route = quote.route && quote.route.length > 0 ? quote.route[0] : [];
+			
+			console.log(`Sailor API: Raw response structure:`, {
+				hasQuote: !!data.quote,
+				hasRoute: !!(quote.route),
+				routeLength: quote.route?.length || 0,
+				firstRouteHops: route.length || 0,
+				outputAmount: quote.output?.amount,
+				inputAmount: quote.input?.amount
+			});
+			
 			const sailorResponse: SailorQuoteResponse = {
 				success: true,
-				route: data.route || [],
-				total_amount_in: data.total_amount_in || amountInWei.toString(),
-				total_amount_out: data.total_amount_out || "0",
-				total_price_impact: data.total_price_impact || "0",
-				total_fee: data.total_fee || "0",
-				estimated_gas: data.estimated_gas || "200000",
+				route: route || [],
+				total_amount_in: quote.input?.amount?.toString() || amountInWei.toString(),
+				total_amount_out: quote.output?.amount?.toString() || "0",
+				total_price_impact: data.quote?.priceImpact?.toString() || "0",
+				total_fee: data.quote?.total_fee_rate?.toString() || "0", 
+				estimated_gas: data.quote?.gasEstimates?.length > 0 ? data.quote.gasEstimates[0] : "200000",
 				slippage_tolerance: slippage.toString(),
-				minimum_amount_out: data.minimum_amount_out || "0"
+				minimum_amount_out: quote.output?.amount ? (parseFloat(quote.output.amount) * (1 - slippage / 100)).toString() : "0",
+				maxPriorityFeePerGas: data.quote?.maxPriorityFeePerGas || "2000000000", // Default 2 gwei
+				maxFeePerGas: data.quote?.maxFeePerGas
 			};
 
 			return sailorResponse;
