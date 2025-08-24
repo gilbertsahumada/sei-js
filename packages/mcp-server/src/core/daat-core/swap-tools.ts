@@ -2,13 +2,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getWalletClientFromProvider, getPublicClient } from "../services/clients.js";
 import { parseUnits, formatUnits } from "viem";
-import { ERC20_ABI, DRAGONSWAP_ROUTER_ABI, DRAGONSWAP_ROUTER_ADDRESS } from "../dex/contracts/abis/index.js";
+import { ERC20_ABI, DRAGONSWAP_ROUTER_ABI, DRAGONSWAP_ROUTER_ADDRESS, SAILOR_ROUTER_ADDRESS, SAILOR_ROUTER_ABI  } from "../dex/contracts/abis/index.js";
 import { protocolConfig, shouldFetchProtocolData } from "./protocol-config.js";
 import { DEFAULT_NETWORK } from "../chains.js";
 import { DragonSwapApiService } from "../dex/pricing/DragonSwapApiService.js";
+import { SailorApiService } from "../dex/pricing/SailorApiService.js";
 import { MulticallService } from "../services/MulticallService.js";
+import * as services from '../services/index.js';
 
 const DRAGONSWAP_ROUTER = DRAGONSWAP_ROUTER_ADDRESS;
+const SAILOR_ROUTER = SAILOR_ROUTER_ADDRESS
+
 // USDT = 0x9151434b16b9763660705744891fA906F660EcC5
 // USDC = 0xe15fc38f6d8c56af07bbcbe3baf5708a2bf42392
 // FXS = 0x64445f0aecc51e94ad52d8ac56b7190e764e561a
@@ -41,7 +45,7 @@ export function registerSwapTools(server: McpServer) {
         },
         { message: "Minimum amount out must be a valid positive number when provided" }
       ).optional().describe("Minimum amount out (optional - will be calculated from quote if not provided)"),
-      slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 0.5)"),
+      slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 2.0)"),
       deadline: z.number().min(1).max(1440, "Deadline must be between 1 and 1440 minutes").optional().describe("Transaction deadline in minutes from now (default: 20)"),
       gasLimit: z.number().min(21000, "Gas limit must be at least 21000").optional().describe("Gas limit override (default: estimated)"),
       gasPrice: z.string().optional().refine(
@@ -49,7 +53,7 @@ export function registerSwapTools(server: McpServer) {
         { message: "Gas price must be a valid number in wei" }
       ).describe("Gas price override in wei (default: current)")
     },
-    async ({ tokenIn, tokenOut, amountIn, minAmountOut, slippage = 0.5, deadline = 20, gasLimit, gasPrice }) => {
+    async ({ tokenIn, tokenOut, amountIn, minAmountOut, slippage = 2.0, deadline = 20, gasLimit, gasPrice }) => {
       console.log("🔧[TOOL_dragonswap_swap]");
       try {
         if (!shouldFetchProtocolData("dragonswap")) {
@@ -81,8 +85,8 @@ export function registerSwapTools(server: McpServer) {
           };
         }
 
-        // Get all token info, balance, and allowance in one multicall
         const multicallService = new MulticallService(publicClient, 1329);
+
         const swapInfo = await multicallService.getSwapInfo(
           tokenIn as `0x${string}`,
           tokenOut as `0x${string}`,
@@ -90,25 +94,8 @@ export function registerSwapTools(server: McpServer) {
           DRAGONSWAP_ROUTER as `0x${string}`
         );
 
-        console.log(`Swap info retrieved:`, {
-          tokenIn: { 
-            address: tokenIn, 
-            decimals: swapInfo.tokenInDecimals, 
-            symbol: swapInfo.tokenInSymbol,
-            balance: formatUnits(swapInfo.balance, swapInfo.tokenInDecimals),
-            allowance: formatUnits(swapInfo.allowance, swapInfo.tokenInDecimals)
-          },
-          tokenOut: { 
-            address: tokenOut, 
-            decimals: swapInfo.tokenOutDecimals, 
-            symbol: swapInfo.tokenOutSymbol 
-          }
-        });
-
-        // Parse amounts using proper decimals
         const amountInParsed = parseUnits(amountIn, swapInfo.tokenInDecimals);
 
-        // Check if user has enough balance
         if (swapInfo.balance < amountInParsed) {
           return {
             content: [{
@@ -121,42 +108,16 @@ export function registerSwapTools(server: McpServer) {
                 tokenSymbol: swapInfo.tokenInSymbol
               }, null, 2)
             }],
-            isError: true
           };
         }
 
-        // Check allowance
-        if (swapInfo.allowance < amountInParsed) {
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                error: "Insufficient allowance",
-                required: formatUnits(amountInParsed, swapInfo.tokenInDecimals),
-                current: formatUnits(swapInfo.allowance, swapInfo.tokenInDecimals),
-                suggestion: "Use approve_token tool first",
-                approveCommand: {
-                  tool: "approve_token",
-                  params: {
-                    tokenAddress: tokenIn,
-                    spenderAddress: DRAGONSWAP_ROUTER,
-                    amount: amountIn
-                  }
-                }
-              }, null, 2)
-            }],
-            isError: true
-          };
-        }
-
-        // Calculate deadline timestamp
         const deadlineTimestamp = Math.floor(Date.now() / 1000) + (deadline * 60);
 
-        // Try to get optimal route from DragonSwap API
-        let path: string[];
+        let useApiCalldata = false;
         let apiQuoteData: any = null;
+        let path: string[] = [tokenIn, tokenOut]; // fallback path
         const wasMinAmountOutProvided = !!minAmountOut;
-        
+
         try {
           const apiQuote = await DragonSwapApiService.getQuote({
             tokenIn,
@@ -168,37 +129,184 @@ export function registerSwapTools(server: McpServer) {
             deadline: 1200,
             timeoutMs: 10000 // 10 second timeout
           });
-          
-          // Extract path from API response
-          path = DragonSwapApiService.extractPathFromRoute(apiQuote.route);
+
           apiQuoteData = apiQuote;
-          
+
           // Calculate minAmountOut if not provided
           if (!minAmountOut) {
             minAmountOut = DragonSwapApiService.calculateMinAmountOut(apiQuote.quoteDecimals, slippage);
-            console.log(`Auto-calculated minAmountOut: ${minAmountOut} (${slippage}% slippage)`);
+            console.log(`Auto-calculated minAmountOut: ${minAmountOut} (${slippage}% slippage - increased for reliability)`);
           }
-          
-          console.log("Using DragonSwap API route:", apiQuote.routeString);
+
+          // Check if API provides method parameters for direct execution
+          if (apiQuote.methodParameters && apiQuote.methodParameters.calldata && apiQuote.methodParameters.to) {
+            console.log("Using DragonSwap API optimized calldata");
+            console.log(`🎯 API Contract: ${apiQuote.methodParameters.to}`);
+            console.log(`📝 Calldata length: ${apiQuote.methodParameters.calldata.length} chars`);
+            console.log(`💰 Value: ${apiQuote.methodParameters.value}`);
+
+            console.log(`📝 Calldata: ${apiQuote.methodParameters.calldata.substring(0, 20)}...`)
+
+            const quoteAmount = parseFloat(apiQuote.quoteDecimals);
+            const inputAmount = parseFloat(amountIn);
+
+            if (quoteAmount <= 0) {
+              throw new Error("API returned zero or negative output amount");
+            }
+
+            if (quoteAmount > inputAmount * 1000) { // Sanity check - no token should 1000x in a swap
+              console.warn(`⚠️ Suspicious quote: ${quoteAmount} output for ${inputAmount} input`);
+            }
+
+            if (apiQuote.blockNumber) {
+              const currentBlock = await publicClient.getBlockNumber();
+              const blockDiff = Number(currentBlock) - Number(apiQuote.blockNumber);
+              if (blockDiff > 5) { // More than 5 blocks old (~30 seconds)
+                console.warn(`⚠️ API quote is ${blockDiff} blocks old, prices may have changed`);
+              }
+            }
+
+            useApiCalldata = true;
+          } else {
+            // Extract path from API response as fallback
+            path = DragonSwapApiService.extractPathFromRoute(apiQuote.route);
+            console.log("Using DragonSwap API route with standard router:", apiQuote.routeString);
+          }
+
         } catch (apiError) {
-          console.warn("DragonSwap API failed, using direct route:", apiError);
-          // Fallback to direct swap
-          path = [tokenIn, tokenOut];
-          
+          console.warn("DragonSwap API failed:", apiError);
+
+          // Check for routing errors  
+          if (apiError instanceof Error && apiError.message.includes("No trading route found")) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  error: "Trading pair not supported on DragonSwap",
+                  message: apiError.message,
+                  tokenIn: `${swapInfo.tokenInSymbol} (${tokenIn})`,
+                  tokenOut: `${swapInfo.tokenOutSymbol} (${tokenOut})`,
+                  suggestions: [
+                    "Verify token addresses are correct", 
+                    "Check if pair exists on DragonSwap frontend",
+                    "Try other DEX protocols (Sailor, Yaka Finance)"
+                  ]
+                }, null, 2)
+              }],
+              isError: true
+            };
+          }
+
           // If no minAmountOut provided and API failed, we can't continue
           if (!minAmountOut) {
             throw new Error("minAmountOut is required when DragonSwap API is unavailable");
           }
         }
 
-        // Parse minAmountOut now that we have it (either provided or calculated)
         const minAmountOutParsed = parseUnits(minAmountOut!, swapInfo.tokenOutDecimals);
+
+        const spenderAddress = (useApiCalldata && apiQuoteData?.methodParameters?.to)
+          ? apiQuoteData.methodParameters.to
+          : DRAGONSWAP_ROUTER;
+
+        let currentAllowance = swapInfo.allowance; // This is for the default router
+
+        if (spenderAddress !== DRAGONSWAP_ROUTER) {
+          try {
+            currentAllowance = await publicClient.readContract({
+              address: tokenIn as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: 'allowance',
+              args: [account.address, spenderAddress as `0x${string}`]
+            }) as bigint;
+            console.log(`Allowance for API contract ${spenderAddress}: ${formatUnits(currentAllowance, swapInfo.tokenInDecimals)}`);
+          } catch (error) {
+            console.warn("Failed to check allowance for API contract, using default");
+          }
+        }
+
+        // Log detailed state before transaction
+        console.log(`🔍 Pre-transaction state check:`, {
+          userBalance: formatUnits(swapInfo.balance, swapInfo.tokenInDecimals),
+          requiredAmount: formatUnits(amountInParsed, swapInfo.tokenInDecimals),
+          allowance: formatUnits(currentAllowance, swapInfo.tokenInDecimals),
+          spenderAddress,
+          tokenInAddress: tokenIn,
+          tokenOutAddress: tokenOut,
+          userAddress: account.address
+        });
+
+        if (currentAllowance < amountInParsed) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Insufficient allowance",
+                required: formatUnits(amountInParsed, swapInfo.tokenInDecimals),
+                current: formatUnits(currentAllowance, swapInfo.tokenInDecimals),
+                spenderAddress,
+                contractType: spenderAddress === DRAGONSWAP_ROUTER ? "DragonSwap Router" : "DragonSwap API Contract",
+                suggestion: "Use approve_token_allowance tool first",
+                approveCommand: {
+                  tool: "approve_token_allowance",
+                  params: {
+                    tokenAddress: tokenIn,
+                    spenderAddress: spenderAddress,
+                    amount: amountIn
+                  }
+                }
+              }, null, 2)
+            }],
+          };
+        }
 
         // Estimate gas if not provided
         let estimatedGas = gasLimit;
         if (!estimatedGas) {
           try {
-            estimatedGas = Number(await publicClient.estimateContractGas({
+            if (useApiCalldata && apiQuoteData?.methodParameters) {
+              // Use API provided gas estimate but add buffer for multicall
+              estimatedGas = apiQuoteData.gasUseEstimate ? Number(apiQuoteData.gasUseEstimate) + 50000 : 300000;
+              console.log(`Using API gas estimate with buffer: ${estimatedGas}`);
+            } else {
+              // Standard router gas estimation
+              estimatedGas = Number(await publicClient.estimateContractGas({
+                address: DRAGONSWAP_ROUTER as `0x${string}`,
+                abi: DRAGONSWAP_ROUTER_ABI,
+                functionName: 'swapExactTokensForTokens',
+                args: [
+                  amountInParsed,
+                  minAmountOutParsed,
+                  path as `0x${string}`[],
+                  account.address
+                ],
+                account: account.address
+              }));
+              console.log(`Estimated gas (standard router): ${estimatedGas}`);
+            }
+          } catch {
+            estimatedGas = useApiCalldata ? 300000 : 250000; // Higher fallback for API calldata with buffer
+            console.warn(`Failed to estimate gas, using fallback value of ${estimatedGas}`);
+          }
+        }
+
+        // Get current gas price if not provided
+        let currentGasPrice = gasPrice ? BigInt(gasPrice) : await publicClient.getGasPrice();
+
+        // Simulate transaction before executing to catch reverts
+        console.log(`🧪 Simulating transaction before execution...`);
+        try {
+          if (useApiCalldata && apiQuoteData?.methodParameters) {
+            // Simulate API calldata
+            await publicClient.call({
+              to: apiQuoteData.methodParameters.to as `0x${string}`,
+              data: apiQuoteData.methodParameters.calldata as `0x${string}`,
+              value: BigInt(apiQuoteData.methodParameters.value || "0x0"),
+              account: account.address
+            });
+          } else {
+            // Simulate standard router call
+            await publicClient.simulateContract({
               address: DRAGONSWAP_ROUTER as `0x${string}`,
               abi: DRAGONSWAP_ROUTER_ABI,
               functionName: 'swapExactTokensForTokens',
@@ -206,39 +314,184 @@ export function registerSwapTools(server: McpServer) {
                 amountInParsed,
                 minAmountOutParsed,
                 path as `0x${string}`[],
-                account.address,
-                BigInt(deadlineTimestamp)
+                account.address
               ],
               account: account.address
-            }));
-          } catch {
-            estimatedGas = 200000; // Safe fallback for swap
+            });
           }
+          console.log(`✅ Simulation passed, proceeding with transaction`);
+        } catch (simulationError) {
+          console.error(`❌ Simulation failed:`, simulationError);
+
+          // Try to decode the error
+          let errorReason = "Unknown revert reason";
+          if (simulationError instanceof Error) {
+            const errorMsg = simulationError.message.toLowerCase();
+            console.error(`Simulation error message: ${errorMsg}`);
+          }
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Transaction simulation failed",
+                reason: errorReason,
+                rawError: simulationError instanceof Error ? simulationError.message : String(simulationError),
+                debugInfo: {
+                  tokenIn: `${swapInfo.tokenInSymbol} (${tokenIn})`,
+                  tokenOut: `${swapInfo.tokenOutSymbol} (${tokenOut})`,
+                  amountIn: `${amountIn} ${swapInfo.tokenInSymbol}`,
+                  minAmountOut: `${minAmountOut} ${swapInfo.tokenOutSymbol}`,
+                  userBalance: formatUnits(swapInfo.balance, swapInfo.tokenInDecimals),
+                  allowance: formatUnits(currentAllowance, swapInfo.tokenInDecimals),
+                  spenderAddress,
+                  slippage: `${slippage}%`,
+                  deadline: new Date(deadlineTimestamp * 1000).toISOString()
+                },
+                suggestions: [
+                  "Check if tokens exist and have liquidity on DragonSwap",
+                  "Try with smaller amount",
+                  "Increase slippage tolerance",
+                  "Verify token addresses are correct",
+                  "Check if pair exists on DragonSwap"
+                ]
+              }, null, 2)
+            }],
+          };
         }
 
-        // Get current gas price if not provided
-        let currentGasPrice = gasPrice ? BigInt(gasPrice) : await publicClient.getGasPrice();
+        let hash: string;
 
-        // Execute the swap transaction
-        const hash = await walletClient.writeContract({
-          address: DRAGONSWAP_ROUTER as `0x${string}`,
-          abi: DRAGONSWAP_ROUTER_ABI,
-          functionName: 'swapExactTokensForTokens',
-          args: [
-            amountInParsed,
-            minAmountOutParsed,
-            path as `0x${string}`[],
-            account.address,
-            BigInt(deadlineTimestamp)
-          ],
-          gas: BigInt(estimatedGas),
-          gasPrice: currentGasPrice,
-          account: walletClient.account!,
-          chain: walletClient.chain
+        if (useApiCalldata && apiQuoteData?.methodParameters) {
+          console.log(`🎯 Using DragonSwap API - calling multicall with data[] only`);
+          
+          // Call multicall(data[]) instead of the API's multicall(deadline, data[])
+          // We extract the inner swap calldata and call multicall directly
+          const originalCalldata = apiQuoteData.methodParameters.calldata;
+          
+          // The API calldata is for multicall(deadline, data[])
+          // But we need to call multicall(data[]) - the version with 1 parameter
+          // For now, let's try calling with the raw calldata but using writeContract
+          try {
+            // Decode the multicall parameters from the API calldata
+            // This is complex, so let's use a simpler approach first
+            console.log(`📝 API Calldata: ${originalCalldata.substring(0, 50)}...`);
+            
+            // Parse the API calldata to extract the inner swap data
+            // API format: multicall(deadline, data[])
+            // We need: multicall(data[]) - extract just the swap calldata
+            
+            const cleanCalldata = originalCalldata.startsWith('0x') ? originalCalldata.slice(2) : originalCalldata;
+            
+            // Decode the multicall structure:
+            // - Function selector: first 8 chars (4 bytes)
+            // - Parameter 1 (deadline): chars 8-71 (32 bytes) 
+            // - Parameter 2 (data[] offset): chars 72-135 (32 bytes)
+            // - Array length: chars 136-199 (32 bytes)
+            // - First data item offset: chars 200-263 (32 bytes) 
+            // - Data item length: chars 264-327 (32 bytes)
+            // - Actual data: starting at char 328
+            
+            // Extract the actual swap calldata (skip all the multicall wrapper)
+            const dataLengthHex = cleanCalldata.substring(264, 328); // Length of the data item
+            const dataLength = parseInt(dataLengthHex, 16) * 2; // Convert to hex chars
+            const swapCalldata = '0x' + cleanCalldata.substring(328, 328 + dataLength);
+            
+            console.log(`📦 Extracted swap calldata: ${swapCalldata.substring(0, 50)}...`);
+            console.log(`📦 Data length: ${dataLength / 2} bytes`);
+            
+            // Now call multicall(data[]) with just the swap calldata
+            hash = await walletClient.writeContract({
+              address: apiQuoteData.methodParameters.to as `0x${string}`,
+              abi: DRAGONSWAP_ROUTER_ABI,
+              functionName: 'multicall',
+              args: [[swapCalldata as `0x${string}`]],
+              value: BigInt(apiQuoteData.methodParameters.value || "0x0"),
+              gas: BigInt(estimatedGas),
+              maxFeePerGas: currentGasPrice * 2n, // 2x current gas price
+              maxPriorityFeePerGas: currentGasPrice / 10n, // 10% priority fee
+              account: walletClient.account!,
+              chain: walletClient.chain
+            });
+            
+          } catch (multicallError) {
+            console.error(`❌ Multicall failed, trying original method:`, multicallError);
+            
+            // Fallback to original if multicall fails
+            hash = await walletClient.sendTransaction({
+              to: apiQuoteData.methodParameters.to as `0x${string}`,
+              data: apiQuoteData.methodParameters.calldata as `0x${string}`,
+              value: BigInt(apiQuoteData.methodParameters.value || "0x0"),
+              gas: BigInt(estimatedGas),
+              maxFeePerGas: currentGasPrice * 2n,
+              maxPriorityFeePerGas: currentGasPrice / 10n,
+              account: walletClient.account!,
+              chain: walletClient.chain
+            });
+          }
+        } else {
+          // Use standard router method
+          console.log(`🔄 Using standard DragonSwap router`);
+
+          hash = await walletClient.writeContract({
+            address: DRAGONSWAP_ROUTER as `0x${string}`,
+            abi: DRAGONSWAP_ROUTER_ABI,
+            functionName: 'swapExactTokensForTokens',
+            args: [
+              amountInParsed,
+              minAmountOutParsed,
+              path as `0x${string}`[],
+              account.address
+            ],
+            gas: BigInt(estimatedGas),
+            maxFeePerGas: currentGasPrice * 2n,
+            maxPriorityFeePerGas: currentGasPrice / 10n,
+            account: walletClient.account!,
+            chain: walletClient.chain
+          });
+        }
+
+        console.log(`🔍 Waiting for transaction confirmation: ${hash}`);
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: hash as `0x${string}`,
+          timeout: 60_000 // 60 second timeout
         });
 
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        // Check if transaction was successful
+        if (receipt.status === 'reverted') {
+          console.log(`❌ Transaction failed: ${hash}`);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                status: "failed",
+                message: "Transaction was reverted",
+                transactionHash: hash,
+                blockNumber: receipt.blockNumber.toString(),
+                gasUsed: receipt.gasUsed.toString(),
+                explorer: `https://seitrace.com/tx/${hash}`,
+                troubleshooting: {
+                  possibleCauses: [
+                    "Insufficient allowance - try approve_token_allowance first",
+                    "Slippage too low - price moved during transaction",
+                    "Insufficient balance for gas fees",
+                    "Token liquidity issues",
+                    "Router contract error"
+                  ],
+                  suggestions: [
+                    "Check allowance with token info tools",
+                    "Increase slippage tolerance (try 1-2%)",
+                    "Verify sufficient SEI balance for gas",
+                    "Try smaller amount",
+                    "Check if token pair exists on DragonSwap"
+                  ]
+                }
+              }, null, 2)
+            }],
+          };
+        }
 
+        console.log(`✅ Transaction successful: ${hash}`);
         return {
           content: [{
             type: "text",
@@ -248,6 +501,7 @@ export function registerSwapTools(server: McpServer) {
               transactionHash: hash,
               blockNumber: receipt.blockNumber.toString(),
               gasUsed: receipt.gasUsed.toString(),
+              explorer: `https://seitrace.com/tx/${hash}`,
               swap: {
                 protocol: "DragonSwap",
                 tokenIn: {
@@ -283,13 +537,35 @@ export function registerSwapTools(server: McpServer) {
         };
 
       } catch (error) {
+        console.error(`❌ Swap failed:`, error);
+        let errorType = "Unknown";
+        let guidance: string[] = [];
+
+        if (error instanceof Error) {
+          const errorMessage = error.message.toLowerCase();
+        }
+
         return {
           content: [{
             type: "text",
-            text: `Error executing swap: ${error instanceof Error ? error.message : String(error)}`
+            text: JSON.stringify({
+              status: "error",
+              errorType,
+              message: error instanceof Error ? error.message : String(error),
+              guidance,
+              troubleshooting: {
+                nextSteps: [
+                  "Check your wallet balance",
+                  "Verify token allowances",
+                  "Try get quote first to test parameters",
+                  "Check DragonSwap frontend for comparison"
+                ]
+              }
+            }, null, 2)
           }],
           isError: true
         };
+        
       }
     }
   );
@@ -314,9 +590,9 @@ export function registerSwapTools(server: McpServer) {
         },
         { message: "Amount must be a valid positive number" }
       ),
-      slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 0.5)")
+      slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 2.0)")
     },
-    async ({ tokenIn, tokenOut, amountIn, slippage = 0.5 }) => {
+    async ({ tokenIn, tokenOut, amountIn, slippage = 2.0 }) => {
       console.log("🔧[TOOL_dragonswap_quote]");
       try {
         if (!shouldFetchProtocolData("dragonswap")) {
@@ -328,7 +604,6 @@ export function registerSwapTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable DragonSwap"
               }, null, 2)
             }],
-            isError: true
           };
         }
 
@@ -344,7 +619,6 @@ export function registerSwapTools(server: McpServer) {
                 error: "No wallet account found. Please connect your wallet."
               }, null, 2)
             }],
-            isError: true
           };
         }
 
@@ -412,14 +686,23 @@ export function registerSwapTools(server: McpServer) {
                   blockNumber: apiQuote.blockNumber,
                   hitsCachedRoutes: apiQuote.hitsCachedRoutes
                 }
-              }, null, 2),
-              isError: false
+              }, null, 2)
             }]
           };
 
         } catch (apiError) {
           console.error("DragonSwap API failed:", apiError);
-          throw new Error(`DragonSwap API failed: ${apiError instanceof Error ? apiError.message : String(apiError)}`);
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Trading pair not supported on DragonSwap",
+                message: apiError
+              }, null, 2)
+            }],
+            isError: true
+          };
         }
 
       } catch (error) {
@@ -427,6 +710,639 @@ export function registerSwapTools(server: McpServer) {
           content: [{
             type: "text",
             text: `Error getting quote: ${error instanceof Error ? error.message : String(error)}`
+          }],
+          isError: true
+        };
+      }
+    }
+  );
+
+
+  // BRING THIS TOOL BACK
+  server.tool(
+    'approve_token_allowance',
+    'Approve another address (like a DeFi protocol or exchange) to spend your ERC20 tokens. This is often required before interacting with DeFi protocols.',
+    {
+      tokenAddress: z.string().describe("The contract address of the ERC20 token to approve for spending (e.g., '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48')"),
+      spenderAddress: z.string().describe('The contract address being approved to spend your tokens (e.g., a DEX or lending protocol)'),
+      amount: z
+        .string()
+        .describe(
+          "The amount of tokens to approve in token units, not wei (e.g., '1000' to approve spending 1000 tokens). Use a very large number for unlimited approval."
+        ),
+      network: z.string().optional().describe("Network name (e.g., 'sei', 'sei-testnet', 'sei-devnet') or chain ID. Defaults to Sei mainnet.")
+    },
+    async ({ tokenAddress, spenderAddress, amount, network = DEFAULT_NETWORK }) => {
+      try {
+        const result = await services.approveERC20(tokenAddress, spenderAddress, amount, network);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  txHash: result.txHash,
+                  network,
+                  tokenAddress,
+                  spender: spenderAddress,
+                  amount: result.amount.formatted,
+                  symbol: result.token.symbol
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error approving token spending: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ],
+        };
+      }
+    }
+  );
+
+  // Sailor Finance Quote Tool
+  server.tool(
+    "sailor_quote",
+    "Get a quote for a token swap on Sailor Finance using API (read-only)",
+    {
+      tokenIn: z.string().min(1, "Input token address is required").refine(
+        (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+        { message: "Input token must be a valid Ethereum address" }
+      ),
+      tokenOut: z.string().min(1, "Output token address is required").refine(
+        (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+        { message: "Output token must be a valid Ethereum address" }
+      ),
+      amountIn: z.string().min(1, "Amount of input token is required").refine(
+        (val) => {
+          const num = parseFloat(val);
+          return !isNaN(num) && num > 0;
+        },
+        { message: "Amount must be a valid positive number" }
+      ),
+      slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 2.0)"),
+      maxDepth: z.number().min(1).max(5).optional().describe("Maximum routing depth (default: 3)")
+    },
+    async ({ tokenIn, tokenOut, amountIn, slippage = 2.0, maxDepth = 3 }) => {
+      console.log("🔧[TOOL_sailor_quote]");
+      try {
+        if (!shouldFetchProtocolData("sailor")) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Sailor Finance protocol is disabled",
+                suggestion: "Use manage_protocols tool to enable Sailor Finance"
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
+        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
+        const account = walletClient.account;
+
+        if (!account) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "No wallet account found. Please connect your wallet."
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        // Get token decimals and info using multicall3
+        const multicallService = new MulticallService(publicClient, 1329);
+        const { tokenInDecimals, tokenOutDecimals, tokenInSymbol, tokenOutSymbol } = await multicallService.getTokenBasicInfo(
+          tokenIn as `0x${string}`,
+          tokenOut as `0x${string}`
+        );
+
+        console.log(`Token info retrieved:`, {
+          tokenIn: { address: tokenIn, decimals: tokenInDecimals, symbol: tokenInSymbol },
+          tokenOut: { address: tokenOut, decimals: tokenOutDecimals, symbol: tokenOutSymbol }
+        });
+
+        try {
+          // Get quote from Sailor Finance API
+          const apiQuote = await SailorApiService.getQuote({
+            tokenIn,
+            tokenOut,
+            amountIn,
+            tokenInDecimals,
+            slippage,
+            maxDepth
+          });
+
+          // Extract route path
+          const routePath = SailorApiService.extractPathFromRoute(apiQuote.route);
+          const minAmountOut = SailorApiService.calculateMinAmountOut(apiQuote.total_amount_out, slippage);
+          const routeString = SailorApiService.formatRouteString(apiQuote.route);
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                quote: {
+                  protocol: "Sailor Finance",
+                  inputToken: {
+                    address: tokenIn,
+                    symbol: tokenInSymbol,
+                    amount: amountIn
+                  },
+                  outputToken: {
+                    address: tokenOut,
+                    symbol: tokenOutSymbol,
+                    estimatedAmount: apiQuote.total_amount_out
+                  },
+                  route: {
+                    path: routePath,
+                    routeString: routeString,
+                    hops: apiQuote.route.length
+                  },
+                  pricing: {
+                    priceImpact: `${apiQuote.total_price_impact}%`,
+                    totalFee: apiQuote.total_fee,
+                    gasEstimate: apiQuote.estimated_gas
+                  },
+                  slippage: {
+                    tolerance: `${slippage}%`,
+                    minimumReceived: minAmountOut
+                  }
+                },
+                apiResponse: {
+                  success: apiQuote.success,
+                  route: apiQuote.route
+                }
+              }, null, 2)
+            }]
+          };
+
+        } catch (apiError) {
+          console.error("Sailor Finance API failed:", apiError);
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Trading pair not supported on Sailor Finance",
+                message: apiError instanceof Error ? apiError.message : String(apiError),
+                tokenIn: `${tokenInSymbol} (${tokenIn})`,
+                tokenOut: `${tokenOutSymbol} (${tokenOut})`,
+                suggestions: [
+                  "Verify token addresses are correct",
+                  "Check if pair exists on Sailor Finance frontend",
+                  "Try other DEX protocols (DragonSwap, Yaka Finance)"
+                ]
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+      } catch (error) {
+        return {
+          content: [{
+            type: "text",
+            text: `Error getting Sailor quote: ${error instanceof Error ? error.message : String(error)}`
+          }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Sailor Finance Swap Tool
+  server.tool(
+    "sailor_swap",
+    "Execute a token swap on Sailor Finance DEX (uses PRIVATE_KEY from environment)",
+    {
+      tokenIn: z.string().min(1, "Input token address is required").refine(
+        (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+        { message: "Input token must be a valid Ethereum address" }
+      ),
+      tokenOut: z.string().min(1, "Output token address is required").refine(
+        (val) => /^0x[a-fA-F0-9]{40}$/.test(val),
+        { message: "Output token must be a valid Ethereum address" }
+      ),
+      amountIn: z.string().min(1, "Amount of input token is required").refine(
+        (val) => {
+          const num = parseFloat(val);
+          return !isNaN(num) && num > 0;
+        },
+        { message: "Amount must be a valid positive number" }
+      ),
+      minAmountOut: z.string().refine(
+        (val) => {
+          if (!val) return true; // Allow empty for auto-calculation
+          const num = parseFloat(val);
+          return !isNaN(num) && num > 0;
+        },
+        { message: "Minimum amount out must be a valid positive number when provided" }
+      ).optional().describe("Minimum amount out (optional - will be calculated from quote if not provided)"),
+      slippage: z.number().min(0).max(100, "Slippage must be between 0 and 100").optional().describe("Slippage tolerance in percentage (default: 2.0)"),
+      deadline: z.number().min(1).max(1440, "Deadline must be between 1 and 1440 minutes").optional().describe("Transaction deadline in minutes from now (default: 20)"),
+      gasLimit: z.number().min(21000, "Gas limit must be at least 21000").optional().describe("Gas limit override (default: estimated)"),
+      gasPrice: z.string().optional().refine(
+        (val) => val === undefined || /^\\d+$/.test(val),
+        { message: "Gas price must be a valid number in wei" }
+      ).describe("Gas price override in wei (default: current)")
+    },
+    async ({ tokenIn, tokenOut, amountIn, minAmountOut, slippage = 2.0, deadline = 20, gasLimit, gasPrice }) => {
+      console.log("🔧[TOOL_sailor_swap]");
+      try {
+        if (!shouldFetchProtocolData("sailor")) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Sailor Finance protocol is disabled",
+                suggestion: "Use manage_protocols tool to enable Sailor Finance"
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        const publicClient = getPublicClient(DEFAULT_NETWORK);
+        const walletClient = await getWalletClientFromProvider(DEFAULT_NETWORK);
+        const account = walletClient.account;
+
+        if (!account) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "No wallet account found. Please connect your wallet."
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        // Get all token info, balance, and allowance in one multicall
+        const multicallService = new MulticallService(publicClient, 1329);
+
+        // Get basic swap info with Sailor router
+        const swapInfo = await multicallService.getSwapInfo(
+          tokenIn as `0x${string}`,
+          tokenOut as `0x${string}`,
+          account.address,
+          SAILOR_ROUTER as `0x${string}`
+        );
+
+        // Parse amounts using proper decimals
+        const amountInParsed = parseUnits(amountIn, swapInfo.tokenInDecimals);
+
+        // Check if user has enough balance
+        if (swapInfo.balance < amountInParsed) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Insufficient balance",
+                required: formatUnits(amountInParsed, swapInfo.tokenInDecimals),
+                available: formatUnits(swapInfo.balance, swapInfo.tokenInDecimals),
+                tokenAddress: tokenIn,
+                tokenSymbol: swapInfo.tokenInSymbol
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        // Calculate deadline timestamp
+        const deadlineTimestamp = Math.floor(Date.now() / 1000) + (deadline * 60);
+
+        // Try to get optimal route from Sailor API
+        let apiQuoteData: any = null;
+        let useComplexRouting = false;
+        const wasMinAmountOutProvided = !!minAmountOut;
+
+        try {
+          const apiQuote = await SailorApiService.getQuote({
+            tokenIn,
+            tokenOut,
+            amountIn,
+            tokenInDecimals: swapInfo.tokenInDecimals,
+            slippage
+          });
+
+          apiQuoteData = apiQuote;
+
+          // Calculate minAmountOut if not provided
+          if (!minAmountOut) {
+            minAmountOut = SailorApiService.calculateMinAmountOut(apiQuote.total_amount_out, slippage);
+            console.log(`Auto-calculated minAmountOut: ${minAmountOut} (${slippage}% slippage)`);
+          }
+
+          // Check if we need complex routing (more than direct swap)
+          useComplexRouting = apiQuote.route.length > 1;
+          console.log(`Sailor routing: ${useComplexRouting ? 'Complex' : 'Direct'} (${apiQuote.route.length} hops)`);
+
+        } catch (apiError) {
+          console.warn("Sailor API failed:", apiError);
+
+          // Check for routing errors  
+          if (apiError instanceof Error && apiError.message.includes("No trading route found")) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  error: "Trading pair not supported on Sailor Finance",
+                  message: apiError.message,
+                  tokenIn: `${swapInfo.tokenInSymbol} (${tokenIn})`,
+                  tokenOut: `${swapInfo.tokenOutSymbol} (${tokenOut})`,
+                  suggestions: [
+                    "Verify token addresses are correct",
+                    "Check if pair exists on Sailor Finance frontend",
+                    "Try other DEX protocols (DragonSwap, Yaka Finance)"
+                  ]
+                }, null, 2)
+              }],
+              isError: true
+            };
+          }
+
+          // If no minAmountOut provided and API failed, we can't continue
+          if (!minAmountOut) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  error: "minAmountOut is required when Sailor API is unavailable",
+                  suggestion: "Provide minAmountOut parameter or fix API connectivity"
+                }, null, 2)
+              }],
+              isError: true
+            };
+          }
+        }
+
+        // Parse minAmountOut now that we have it (either provided or calculated)
+        const minAmountOutParsed = parseUnits(minAmountOut!, swapInfo.tokenOutDecimals);
+
+        // Check allowance for Sailor router
+        if (swapInfo.allowance < amountInParsed) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Insufficient allowance",
+                required: formatUnits(amountInParsed, swapInfo.tokenInDecimals),
+                current: formatUnits(swapInfo.allowance, swapInfo.tokenInDecimals),
+                spenderAddress: SAILOR_ROUTER,
+                contractType: "Sailor Finance Router",
+                suggestion: "Use approve_token_allowance tool first",
+                approveCommand: {
+                  tool: "approve_token_allowance",
+                  params: {
+                    tokenAddress: tokenIn,
+                    spenderAddress: SAILOR_ROUTER,
+                    amount: amountIn
+                  }
+                }
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        // Estimate gas if not provided
+        let estimatedGas = gasLimit;
+        if (!estimatedGas) {
+          try {
+            if (useComplexRouting && apiQuoteData) {
+              // Use API estimated gas for complex routing
+              estimatedGas = apiQuoteData.estimated_gas ? Number(apiQuoteData.estimated_gas) : 350000;
+              console.log(`Using API gas estimate for complex routing: ${estimatedGas}`);
+            } else {
+              // Simple V2 style swap gas estimation
+              estimatedGas = Number(await publicClient.estimateContractGas({
+                address: SAILOR_ROUTER as `0x${string}`,
+                abi: SAILOR_ROUTER_ABI,
+                functionName: 'swapExactTokensForTokens',
+                args: [
+                  amountInParsed,
+                  minAmountOutParsed,
+                  [tokenIn, tokenOut] as `0x${string}`[],
+                  account.address
+                ],
+                account: account.address
+              }));
+              console.log(`Estimated gas (simple swap): ${estimatedGas}`);
+            }
+          } catch {
+            estimatedGas = useComplexRouting ? 350000 : 250000;
+            console.warn(`Failed to estimate gas, using fallback value of ${estimatedGas}`);
+          }
+        }
+
+        // Get current gas price if not provided
+        let currentGasPrice = gasPrice ? BigInt(gasPrice) : await publicClient.getGasPrice();
+
+        // Simulate transaction before executing
+        console.log(`🧪 Simulating Sailor transaction before execution...`);
+        try {
+          if (useComplexRouting) {
+            // For complex routing, we would need to construct the exact path bytes
+            // For now, we'll skip simulation for complex routes
+            console.log(`⚠️ Skipping simulation for complex routing - proceeding with transaction`);
+          } else {
+            // Simulate simple V2 swap
+            await publicClient.simulateContract({
+              address: SAILOR_ROUTER as `0x${string}`,
+              abi: SAILOR_ROUTER_ABI,
+              functionName: 'swapExactTokensForTokens',
+              args: [
+                amountInParsed,
+                minAmountOutParsed,
+                [tokenIn, tokenOut] as `0x${string}`[],
+                account.address
+              ],
+              account: account.address
+            });
+            console.log(`✅ Sailor simulation passed, proceeding with transaction`);
+          }
+        } catch (simulationError) {
+          console.error(`❌ Sailor simulation failed:`, simulationError);
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: "Transaction simulation failed",
+                rawError: simulationError instanceof Error ? simulationError.message : String(simulationError),
+                debugInfo: {
+                  tokenIn: `${swapInfo.tokenInSymbol} (${tokenIn})`,
+                  tokenOut: `${swapInfo.tokenOutSymbol} (${tokenOut})`,
+                  amountIn: `${amountIn} ${swapInfo.tokenInSymbol}`,
+                  minAmountOut: `${minAmountOut} ${swapInfo.tokenOutSymbol}`,
+                  userBalance: formatUnits(swapInfo.balance, swapInfo.tokenInDecimals),
+                  allowance: formatUnits(swapInfo.allowance, swapInfo.tokenInDecimals),
+                  router: SAILOR_ROUTER,
+                  slippage: `${slippage}%`,
+                  deadline: new Date(deadlineTimestamp * 1000).toISOString()
+                },
+                suggestions: [
+                  "Check if tokens exist and have liquidity on Sailor Finance",
+                  "Try with smaller amount",
+                  "Increase slippage tolerance",
+                  "Verify token addresses are correct"
+                ]
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        let hash: string;
+
+        // Execute the swap
+        if (useComplexRouting) {
+          // For complex routing, we'd need to use exactInput with proper path encoding
+          // For now, let's fall back to simple swap
+          console.log(`⚠️ Complex routing detected but using simple swap for now`);
+        }
+
+        // Use simple V2-style swap (works for direct pairs)
+        console.log(`🔄 Executing simple swap on Sailor Finance`);
+        hash = await walletClient.writeContract({
+          address: SAILOR_ROUTER as `0x${string}`,
+          abi: SAILOR_ROUTER_ABI,
+          functionName: 'swapExactTokensForTokens',
+          args: [
+            amountInParsed,
+            minAmountOutParsed,
+            [tokenIn, tokenOut] as `0x${string}`[],
+            account.address
+          ],
+          gas: BigInt(estimatedGas),
+          maxFeePerGas: currentGasPrice * 2n,
+          maxPriorityFeePerGas: currentGasPrice / 10n,
+          account: walletClient.account!,
+          chain: walletClient.chain
+        });
+
+        console.log(`🔍 Waiting for Sailor transaction confirmation: ${hash}`);
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: hash as `0x${string}`,
+          timeout: 60_000
+        });
+
+        // Check if transaction was successful
+        if (receipt.status === 'reverted') {
+          console.log(`❌ Sailor transaction failed: ${hash}`);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                status: "failed",
+                message: "Transaction was reverted",
+                transactionHash: hash,
+                blockNumber: receipt.blockNumber.toString(),
+                gasUsed: receipt.gasUsed.toString(),
+                explorer: `https://seitrace.com/tx/${hash}`,
+                troubleshooting: {
+                  possibleCauses: [
+                    "Insufficient allowance - try approve_token_allowance first",
+                    "Slippage too low - price moved during transaction",
+                    "Insufficient balance for gas fees",
+                    "Token liquidity issues on Sailor Finance",
+                    "Router contract error"
+                  ],
+                  suggestions: [
+                    "Check allowance with token info tools",
+                    "Increase slippage tolerance (try 3-5%)",
+                    "Verify sufficient SEI balance for gas",
+                    "Try smaller amount",
+                    "Check if token pair exists on Sailor Finance"
+                  ]
+                }
+              }, null, 2)
+            }],
+            isError: true
+          };
+        }
+
+        console.log(`✅ Sailor transaction successful: ${hash}`);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              status: "success",
+              message: "Swap executed successfully on Sailor Finance",
+              transactionHash: hash,
+              blockNumber: receipt.blockNumber.toString(),
+              gasUsed: receipt.gasUsed.toString(),
+              explorer: `https://seitrace.com/tx/${hash}`,
+              swap: {
+                protocol: "Sailor Finance",
+                tokenIn: {
+                  address: tokenIn,
+                  symbol: swapInfo.tokenInSymbol,
+                  name: swapInfo.tokenInName,
+                  amount: amountIn,
+                  decimals: swapInfo.tokenInDecimals
+                },
+                tokenOut: {
+                  address: tokenOut,
+                  symbol: swapInfo.tokenOutSymbol,
+                  name: swapInfo.tokenOutName,
+                  minAmount: minAmountOut,
+                  decimals: swapInfo.tokenOutDecimals
+                },
+                route: {
+                  type: useComplexRouting ? "Complex" : "Direct",
+                  hops: apiQuoteData?.route.length || 1,
+                  routeString: apiQuoteData ? SailorApiService.formatRouteString(apiQuoteData.route) : `Direct: ${swapInfo.tokenInSymbol} -> ${swapInfo.tokenOutSymbol}`,
+                  usedAPI: !!apiQuoteData,
+                  priceImpact: apiQuoteData?.total_price_impact || "unknown"
+                },
+                slippage: {
+                  tolerance: `${slippage}%`,
+                  minimumReceived: minAmountOut,
+                  autoCalculated: !wasMinAmountOutProvided
+                },
+                deadline: new Date(deadlineTimestamp * 1000).toISOString()
+              },
+              wallet: account.address
+            }, null, 2)
+          }]
+        };
+
+      } catch (error) {
+        console.error(`❌ Sailor swap failed:`, error);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              status: "error",
+              message: error instanceof Error ? error.message : String(error),
+              troubleshooting: {
+                nextSteps: [
+                  "Check your wallet balance",
+                  "Verify token allowances for Sailor router",
+                  "Try get quote first to test parameters",
+                  "Check Sailor Finance frontend for comparison",
+                  "Ensure tokens are supported on Sailor Finance"
+                ]
+              }
+            }, null, 2)
           }],
           isError: true
         };

@@ -31,8 +31,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable DragonSwap"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const fetcher = new DragonSwapApiPriceFetcher();
@@ -73,8 +72,7 @@ export function registerTokenTools(server: McpServer) {
             type: "text",
             text: `Error fetching DragonSwap prices: ${error instanceof Error ? error.message : String(error)}`
           }],
-          isError: true
-        };
+                  };
       }
     }
   );
@@ -99,8 +97,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable DragonSwap"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const fetcher = new DragonSwapApiPriceFetcher();
@@ -132,8 +129,7 @@ export function registerTokenTools(server: McpServer) {
             type: "text",
             text: `Error searching DragonSwap tokens: ${error instanceof Error ? error.message : String(error)}`
           }],
-          isError: true
-        };
+                  };
       }
     }
   );
@@ -159,8 +155,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable Sailor Finance"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const sailorTokens = new SailorTokens(1329);
@@ -221,8 +216,7 @@ export function registerTokenTools(server: McpServer) {
             type: "text",
             text: `Error fetching Sailor prices: ${error instanceof Error ? error.message : String(error)}`
           }],
-          isError: true
-        };
+                  };
       }
     }
   );
@@ -251,8 +245,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable more protocols"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const fetchPromises: Promise<any>[] = [];
@@ -401,8 +394,7 @@ export function registerTokenTools(server: McpServer) {
             type: "text",
             text: `Error finding common tokens: ${error instanceof Error ? error.message : String(error)}`
           }],
-          isError: true
-        };
+                  };
       }
     }
   );
@@ -430,8 +422,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Please provide a minimum spread percentage (e.g., 1 for 1%, 2 for 2%)"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         if (typeof minSpread !== 'number' || minSpread < 0) {
@@ -445,8 +436,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Please provide a valid spread percentage (e.g., 1 for 1%, 2 for 2%)"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const enabledProtocols = protocolConfig.getEnabledProtocols();
@@ -462,8 +452,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable more protocols"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const fetchPromises: Promise<any>[] = [];
@@ -640,8 +629,7 @@ export function registerTokenTools(server: McpServer) {
             type: "text",
             text: `Error finding arbitrage opportunities: ${error instanceof Error ? error.message : String(error)}`
           }],
-          isError: true
-        };
+                  };
       }
     }
   );
@@ -665,8 +653,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable Sailor Finance"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const fetcher = new SailorApiPriceFetcher();
@@ -721,8 +708,7 @@ export function registerTokenTools(server: McpServer) {
             type: "text",
             text: `Error fetching Sailor prices: ${error instanceof Error ? error.message : String(error)}`
           }],
-          isError: true
-        };
+                  };
       }
     }
   );
@@ -746,8 +732,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable Yaka Finance"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const fetcher = new YakaFinanceApiPriceFetcher();
@@ -788,8 +773,7 @@ export function registerTokenTools(server: McpServer) {
             type: "text",
             text: `Error fetching Yaka Finance prices: ${error instanceof Error ? error.message : String(error)}`
           }],
-          isError: true
-        };
+                  };
       }
     }
   );
@@ -813,8 +797,7 @@ export function registerTokenTools(server: McpServer) {
                 suggestion: "Use manage_protocols tool to enable Yaka Finance"
               }, null, 2)
             }],
-            isError: true
-          };
+                      };
         }
 
         const fetcher = new YakaFinanceApiPriceFetcher();
@@ -846,8 +829,7 @@ export function registerTokenTools(server: McpServer) {
             type: "text",
             text: `Error searching Yaka Finance tokens: ${error instanceof Error ? error.message : String(error)}`
           }],
-          isError: true
-        };
+                  };
       }
     }
   );

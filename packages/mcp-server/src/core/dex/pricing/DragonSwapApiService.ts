@@ -95,7 +95,7 @@ export class DragonSwapApiService {
 			recipient,
 			slippage = 0.5,
 			deadline = 1200,
-			timeoutMs = 12000
+			timeoutMs = 15000
 		} = params;
 
 		const amountInWei = parseUnits(amountIn, tokenInDecimals);
@@ -157,16 +157,33 @@ export class DragonSwapApiService {
 					errorText,
 					requestParams: quoteParams
 				});
+				
+				// Try to parse JSON error response
+				try {
+					const errorData = JSON.parse(errorText);
+					if (errorData.error && errorData.error.type === 'route_not_found') {
+						throw new Error(`No trading route found for ${tokenIn} -> ${tokenOut} on DragonSwap. This pair may not have liquidity or may not be supported.`);
+					}
+				} catch (parseError) {
+					// If JSON parsing fails, continue with original error
+				}
+				
 				throw new Error(`DragonSwap API error: ${response.status} ${response.statusText} - ${errorText}`);
 			}
 
-			const data = await response.json() as DragonSwapQuoteResponse;
+			const data: any = await response.json();
+			
+			// Check if the response contains an error even with 200 status
+			if (data.error && data.error.type === 'route_not_found') {
+				throw new Error(`No trading route found for ${tokenIn} -> ${tokenOut} on DragonSwap. This pair may not have liquidity or may not be supported.`);
+			}
+			
 			console.log(`DragonSwap API: Quote successful for ${amountIn} ${tokenIn} -> ${tokenOut}`, {
 				estimatedOutput: data.quoteDecimals,
 				priceImpact: data.priceImpact,
 				route: data.routeString
 			});
-			return data;
+			return data as DragonSwapQuoteResponse;
 			
 		} catch (error) {
 			clearTimeout(timeoutId);

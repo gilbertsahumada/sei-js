@@ -44,7 +44,6 @@ export abstract class BaseDex {
     this.network = network;
   }
 
-  // Abstract methods that each DEX must implement
   abstract getQuote(params: SwapParams): Promise<SwapQuote>;
   abstract executeSwap(params: SwapParams): Promise<Hex>;
   abstract getPool(tokenA: Address, tokenB: Address): Promise<LiquidityPool | null>;
