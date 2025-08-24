@@ -8,10 +8,10 @@ import { type TokenInfo, type TokenList } from "./BaseTokenFetcher.js";
 export type ProtocolName = "DragonSwap" | "Sailor" | "OkuTrade" | "YakaFinance";
 
 export interface UnifiedTokenInfo extends TokenInfo {
-  sources: ProtocolName[]; // Which protocols have this token
-  bestPrice?: number; // Best price across all sources
-  priceVariance?: number; // Price variance between sources
-  riskScores?: { [protocol: string]: string }; // Risk scores from different protocols
+  sources: ProtocolName[]; 
+  bestPrice?: number; 
+  priceVariance?: number; 
+  riskScores?: { [protocol: string]: string }; 
 }
 
 export interface TokenComparison {

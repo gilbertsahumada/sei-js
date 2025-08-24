@@ -21,8 +21,7 @@ export function registerContractTools(server: McpServer) {
         const dexContracts = {
           DragonSwap: contracts.getDexContracts("DragonSwap"),
           Sailor: contracts.getDexContracts("Sailor"),
-          Yaka: contracts.getDexContracts("Yaka"),
-          Oku: contracts.getDexContracts("Oku")
+          Yaka: contracts.getDexContracts("Yaka")
         };
 
         const tokenContracts = contracts.getTokenContracts();
@@ -56,7 +55,7 @@ export function registerContractTools(server: McpServer) {
     "get_dex_contracts",
     "Get contract addresses for a specific DEX",
     {
-      dexName: z.enum(["DragonSwap", "Sailor", "Yaka", "Oku"]).describe("DEX name"),
+      dexName: z.enum(["DragonSwap", "Sailor", "Yaka"]).describe("DEX name"),
       chainId: z.number().optional().describe("Chain ID (default: 1329)")
     },
     async ({ dexName, chainId = 1329 }) => {
@@ -186,7 +185,7 @@ export function registerContractTools(server: McpServer) {
       try {
         const contracts = new ContractAddresses(chainId);
         
-        const dexes = ["DragonSwap", "Sailor", "Yaka", "Oku"] as const;
+        const dexes = ["DragonSwap", "Sailor", "Yaka"] as const;
         const status: any = {};
         
         for (const dex of dexes) {

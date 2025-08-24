@@ -39,13 +39,8 @@ export class OkuTradeTokens extends BaseTokenFetcher {
 
   protected async fetchTokensFromSource(): Promise<TokenInfo[]> {
     try {
-      console.log(`Fetching Oku Trade tokens from GitHub API`);
-      
-      // First, get the list of token directories
       const tokenDirectories = await this.getTokenDirectories();
-      console.log(`Found ${tokenDirectories.length} token directories`);
 
-      // Then, fetch info.json for each token
       const tokens: TokenInfo[] = [];
       const batchSize = 10; // Process in batches to avoid rate limiting
       
@@ -64,13 +59,11 @@ export class OkuTradeTokens extends BaseTokenFetcher {
           }
         });
 
-        // Small delay between batches to be respectful to GitHub API
         if (i + batchSize < tokenDirectories.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
 
-      console.log(`Successfully processed ${tokens.length} tokens from Oku Trade`);
       return tokens;
 
     } catch (error) {
@@ -98,7 +91,6 @@ export class OkuTradeTokens extends BaseTokenFetcher {
 
     const data: GitHubApiResponse[] = await response.json() as GitHubApiResponse[];
     
-    // Filter for directories only (token addresses)
     return data.filter(item => 
       item.type === 'dir' && 
       item.name.startsWith('0x') && 

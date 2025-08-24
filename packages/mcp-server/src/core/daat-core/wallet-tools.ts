@@ -327,10 +327,9 @@ export function registerWalletTools(server: McpServer) {
           abi: ERC20_ABI,
           functionName: 'approve',
           args: [spenderAddress as `0x${string}`, approveAmount],
-          account: "0x0000000000000000000000000000000000000000" // Dummy account for estimation
-        }).catch(() => BigInt(50000)); // Fallback estimate
+          account: "0x0000000000000000000000000000000000000000" 
+        }).catch(() => BigInt(50000)); 
 
-        // Get current gas price
         const gasPrice = await publicClient.getGasPrice();
         const estimatedCost = gasEstimate * gasPrice;
 

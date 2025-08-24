@@ -26,8 +26,6 @@ export class DragonSwapTokens extends BaseTokenFetcher {
 
   protected async fetchTokensFromSource(): Promise<TokenInfo[]> {
     try {
-      console.log('Fetching DragonSwap token list...');
-      
       const response = await fetch(
         'https://raw.githubusercontent.com/DragonSwap-defi/assets/main/generated/dragonswap-default.tokenlist.json',
         {
@@ -49,16 +47,11 @@ export class DragonSwapTokens extends BaseTokenFetcher {
         throw new Error('Invalid token list format: missing tokens array');
       }
 
-      console.log(`Found ${data.tokens.length} tokens from DragonSwap`);
-
-      // Filter and normalize tokens for the specified chain
       const filteredTokens = data.tokens
         .filter(token => token.chainId === this.chainId)
         .filter(token => this.validateToken(token))
         .map(token => this.normalizeDragonSwapToken(token));
 
-      console.log(`Processed ${filteredTokens.length} valid tokens for chain ${this.chainId}`);
-      
       return filteredTokens;
 
     } catch (error) {

@@ -11,15 +11,9 @@ export interface DexContracts {
 export interface TokenContracts {
   // Native and wrapped tokens
   WSEI: Address;
-  
   // Stablecoins
   USDC: Address;
   USDT: Address;
-  
-  // DEX native tokens
-  DRG: Address;   // DragonSwap token
-  YAKA: Address;  // Yaka Finance token
-  
   // Other popular tokens (to be filled)
   [symbol: string]: Address;
 }
@@ -56,13 +50,6 @@ export class ContractAddresses {
         positionManager: "0x2222222222222222222222222222222222222222", // TODO: Find Yaka position manager
         multicall: "0x2222222222222222222222222222222222222222" 
       },
-      Oku: {
-        router: "0xdD489C75be1039ec7d843A6aC2Fd658350B067Cf", // Swap Router02
-        factory: "0x75FC67473A91335B5b8F8821277262a13B38c9b3", // v3 Core Factory
-        quoter: "0x807F4E281B7A3B324825C64ca53c69F0b418dE40", // Quoter V2
-        positionManager: "0x8B3c541c30f9b29560f56B9E44b59718916B69EF", // Nonfungible Token Position Manager
-        multicall: "0xcA11bde05977b3631167028862bE2a173976CA11" // Multicall 3
-      }
     },
     
     // Sei Testnet (1328)
@@ -126,7 +113,7 @@ export class ContractAddresses {
     this.chainId = chainId;
   }
 
-  getDexContracts(dexName: "DragonSwap" | "Sailor" | "Yaka" | "Oku"): DexContracts {
+  getDexContracts(dexName: "DragonSwap" | "Sailor" | "Yaka"): DexContracts {
     const contracts = ContractAddresses.DEX_CONTRACTS[this.chainId]?.[dexName];
     if (!contracts) {
       throw new Error(`No contracts found for ${dexName} on chain ${this.chainId}`);
@@ -134,21 +121,21 @@ export class ContractAddresses {
     return contracts;
   }
 
-  getRouterAddress(dexName: "DragonSwap" | "Sailor" | "Yaka" | "Oku"): Address {
+  getRouterAddress(dexName: "DragonSwap" | "Sailor" | "Yaka"): Address {
     return this.getDexContracts(dexName).router;
   }
 
   /**
    * Get factory address for a specific DEX
    */
-  getFactoryAddress(dexName: "DragonSwap" | "Sailor" | "Yaka" | "Oku"): Address {
+  getFactoryAddress(dexName: "DragonSwap" | "Sailor" | "Yaka" ): Address {
     return this.getDexContracts(dexName).factory;
   }
 
   /**
    * Get quoter address for V3-style DEXes (DragonSwap, Sailor and Oku)
    */
-  getQuoterAddress(dexName: "DragonSwap" | "Sailor" | "Yaka" | "Oku"): Address {
+  getQuoterAddress(dexName: "DragonSwap" | "Sailor" | "Yaka"): Address {
     const contracts = this.getDexContracts(dexName);
     if (!contracts.quoter) {
       throw new Error(`No quoter address available for ${dexName}`);
@@ -159,7 +146,7 @@ export class ContractAddresses {
   /**
    * Get position manager address for concentrated liquidity DEXes
    */
-  getPositionManagerAddress(dexName: "DragonSwap" | "Sailor" | "Yaka" | "Oku"): Address {
+  getPositionManagerAddress(dexName: "DragonSwap" | "Sailor" | "Yaka"): Address {
     const contracts = this.getDexContracts(dexName);
     if (!contracts.positionManager) {
       throw new Error(`No position manager address available for ${dexName}`);
@@ -170,7 +157,7 @@ export class ContractAddresses {
   /**
    * Get multicall address for a DEX (if available)
    */
-  getMulticallAddress(dexName: "DragonSwap" | "Sailor" | "Yaka" | "Oku"): Address | null {
+  getMulticallAddress(dexName: "DragonSwap" | "Sailor" | "Yaka"): Address | null {
     const contracts = this.getDexContracts(dexName);
     return contracts.multicall || null;
   }
