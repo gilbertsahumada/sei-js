@@ -220,7 +220,15 @@ export class DragonSwapApiService {
 
 	static calculateMinAmountOut(quoteDecimals: string, slippagePercent: number): string {
 		const quote = parseFloat(quoteDecimals);
-		const minAmount = quote * (1 - slippagePercent / 100);
+		
+		// For very small amounts, be more lenient to account for fees and precision loss
+		let adjustedSlippage = slippagePercent;
+		if (quote < 0.00001) { // Very small amounts (less than 10000 wei for most 18-decimal tokens)
+			adjustedSlippage = Math.max(slippagePercent, 5.0); // At least 5% slippage
+			console.warn(`⚠️ Very small DragonSwap quote detected: ${quote}. Using minimum ${adjustedSlippage}% slippage for reliability.`);
+		}
+		
+		const minAmount = quote * (1 - adjustedSlippage / 100);
 		return minAmount.toString();
 	}
 }

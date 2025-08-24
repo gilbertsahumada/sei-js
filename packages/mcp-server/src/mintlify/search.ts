@@ -62,7 +62,7 @@ const searchSeiJSDocs = async (query: string, config: MintlifySearchConfig): Pro
 /**
  * Create and register the Sei-JS documentation search tool with the MCP server
  */
-/*
+
 export const createSeiJSDocsSearchTool = async (server: McpServer): Promise<void> => {
 	const config = await fetchMintlifyConfig(SUBDOMAIN);
 
@@ -88,4 +88,4 @@ export const createSeiJSDocsSearchTool = async (server: McpServer): Promise<void
 		}
 	);
 };
-*/
+

@@ -8,6 +8,13 @@ export * from './contracts.js';
 export * from './tokens.js';
 export { utils as helpers } from './utils.js';
 
+// Export swap services
+export * from '../daat-core/services/SwapValidationService.js';
+export * from '../daat-core/services/SwapApprovalService.js';
+export * from '../daat-core/services/SwapGasService.js';
+export * from '../daat-core/services/SwapExecutionService.js';
+export * from '../daat-core/services/SwapResponseService.js';
+
 // Re-export common types for convenience
 export type {
 	Address,

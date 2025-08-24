@@ -377,7 +377,7 @@ export function registerSwapTools(server: McpServer) {
             );
 
             console.log(`✅ DragonSwap auto-approval successful: ${approveResult.txHash}`);
-            
+
             // Wait for approval confirmation with multiple confirmations
             await publicClient.waitForTransactionReceipt({
               hash: approveResult.txHash as `0x${string}`,
@@ -386,10 +386,10 @@ export function registerSwapTools(server: McpServer) {
             });
 
             console.log(`✅ DragonSwap approval confirmed with 2 confirmations, proceeding with swap`);
-            
+
           } catch (approveError) {
             console.error(`❌ DragonSwap auto-approval failed:`, approveError);
-            
+
             return {
               content: [
                 {
@@ -503,7 +503,7 @@ export function registerSwapTools(server: McpServer) {
           // Try to decode the error
           let errorReason = "Unknown revert reason";
           if (simulationError instanceof Error) {
-            const errorMsg = simulationError.message.toLowerCase();
+            const errorMsg = simulationError.message;
             console.error(`Simulation error message: ${errorMsg}`);
           }
 
@@ -1482,11 +1482,23 @@ export function registerSwapTools(server: McpServer) {
             // apiQuote.total_amount_out is already in wei, so we need to apply slippage directly as bigint
             const totalAmountOutBigInt = BigInt(apiQuote.total_amount_out);
             const slippageBigInt = BigInt(Math.floor(slippage * 100)); // Convert to basis points
-            const minAmountOutBigInt = totalAmountOutBigInt * (10000n - slippageBigInt) / 10000n;
+            let minAmountOutBigInt = totalAmountOutBigInt * (10000n - slippageBigInt) / 10000n;
+            
+            // For very small amounts, be more lenient to account for fees and precision loss
+            if (totalAmountOutBigInt < 10000n) { // Less than 10000 wei
+              const minSlippageBigInt = slippageBigInt > 500n ? slippageBigInt : 500n; // At least 5% slippage
+              minAmountOutBigInt = totalAmountOutBigInt * (10000n - minSlippageBigInt) / 10000n;
+            }
+            
             minAmountOut = minAmountOutBigInt.toString();
             console.log(
               `Auto-calculated minAmountOut: ${minAmountOut} (${slippage}% slippage) - direct from wei`
             );
+            
+            // Warn about very small amounts
+            if (amountInParsed < 1000000n) { // Less than 1M wei (very small for most tokens)
+              console.warn(`⚠️ Very small swap amount detected: ${amountInParsed.toString()} wei. Consider using larger amounts for better reliability.`);
+            }
           }
 
           useComplexRouting = apiQuote.route.length > 1;
@@ -1525,7 +1537,7 @@ export function registerSwapTools(server: McpServer) {
             );
 
             //console.log(`✅ Sailor auto-approval successful: ${approveResult.txHash}`);
-            
+
             await publicClient.waitForTransactionReceipt({
               hash: approveResult.txHash as `0x${string}`,
               confirmations: 2, // Wait for 2 block confirmations
@@ -1533,10 +1545,10 @@ export function registerSwapTools(server: McpServer) {
             });
 
             console.log(`✅ Sailor approval confirmed with 2 confirmations, proceeding with swap`);
-            
+
           } catch (approveError) {
             console.error(`❌ Sailor auto-approval failed:`, approveError);
-            
+
             return {
               content: [
                 {
@@ -1557,7 +1569,7 @@ export function registerSwapTools(server: McpServer) {
                       contractType: "Sailor Finance Router",
                       suggestions: [
                         "Check if you have sufficient SEI for gas fees",
-                        "Try manual approval with approve_token_allowance tool", 
+                        "Try manual approval with approve_token_allowance tool",
                         "Verify token contract is not paused or blacklisted"
                       ]
                     },
@@ -1578,7 +1590,7 @@ export function registerSwapTools(server: McpServer) {
             if (useComplexRouting && apiQuoteData) {
               estimatedGas = apiQuoteData.estimated_gas
                 ? Number(apiQuoteData.estimated_gas) + 200000 // Add buffer to API estimate
-                : 400000; 
+                : 400000;
               console.log(
                 `Using API gas estimate for complex routing: ${estimatedGas}`
               );
@@ -1587,7 +1599,7 @@ export function registerSwapTools(server: McpServer) {
               console.log(`Using default V3 gas limit: ${estimatedGas}`);
             }
           } catch {
-            estimatedGas =  400000; //NOTE:  I'll keep it simple with a flat estimate for single-hop V3
+            estimatedGas = 400000; //NOTE:  I'll keep it simple with a flat estimate for single-hop V3
             console.warn(
               `Failed to estimate gas, using V3 fallback value of ${estimatedGas}`
             );
@@ -1606,12 +1618,12 @@ export function registerSwapTools(server: McpServer) {
           // Check if API provided gas parameters (works for both single and multi-hop)
           const apiMaxPriorityFee = apiQuoteData.maxPriorityFeePerGas;
           const apiMaxFee = apiQuoteData.maxFeePerGas;
-          
+
           if (apiMaxPriorityFee) {
             maxPriorityFeePerGas = BigInt(apiMaxPriorityFee);
             console.log(`Using API recommended maxPriorityFeePerGas: ${maxPriorityFeePerGas}`);
           }
-          
+
           if (apiMaxFee) {
             maxFeePerGas = BigInt(apiMaxFee);
             console.log(`Using API recommended maxFeePerGas: ${maxFeePerGas}`);
@@ -1622,40 +1634,15 @@ export function registerSwapTools(server: McpServer) {
           }
         }
 
-        // Helper function to encode V3 path from Sailor route
-        function encodeV3Path(route: any[]): `0x${string}` {
-          if (!route || route.length === 0) {
-            throw new Error("Invalid route for V3 path encoding");
-          }
-          
-          console.log('DEBUG: encodeV3Path - input route:', JSON.stringify(route, null, 2));
-          
-          // For V3, we need: token0 + fee + token1 + fee + token2...
-          // Sailor API route format: [{token_in, token_out, fee, ...}, ...]
-          let path = route[0].token_in.toLowerCase().replace('0x', '');
-          
-          for (const hop of route) {
-            // Add fee (in hex, 3 bytes) - fee comes as string from API
-            const feeHex = parseInt(hop.fee).toString(16).padStart(6, '0');
-            path += feeHex;
-            
-            // Add next token
-            path += hop.token_out.toLowerCase().replace('0x', '');
-          }
-          
-          console.log(`DEBUG: encodeV3Path - final path: 0x${path}`);
-          return `0x${path}` as `0x${string}`;
-        }
-
         // Sailor Finance is pure V3 - use exactInput for multi-hop, exactInputSingle for single hop
         const shouldUseExactInput = apiQuoteData?.route.length > 1;
-        
+
         console.log(`🧪 Simulating Sailor transaction before execution...`);
         console.log(`DEBUG: useComplexRouting=${useComplexRouting}, apiQuoteData?.route.length=${apiQuoteData?.route.length}, shouldUseExactInput=${shouldUseExactInput}`);
         console.log(`Using ${shouldUseExactInput ? 'exactInput (V3 multi-hop)' : 'exactInputSingle (V3 single-hop)'} for ${apiQuoteData?.route.length || 1} hops`);
-        
+
         console.log(`⚠️ Skipping simulation temporarily, proceeding directly to transaction`);
-        
+
         /* SIMULATION CODE - COMMENTED OUT FOR TESTING
         try {
           if (shouldUseExactInput && apiQuoteData) {
@@ -1749,14 +1736,14 @@ export function registerSwapTools(server: McpServer) {
 
         // Execute the swap
         console.log(`DEBUG EXECUTION: shouldUseExactInput=${shouldUseExactInput}, apiQuoteData exists=${!!apiQuoteData}`);
-        
+
         if (shouldUseExactInput && apiQuoteData) {
           // Use exactInput for complex V3 routing
           console.log(`🔄 Executing V3 exactInput swap on Sailor Finance`);
           console.log(`DEBUG: Route data:`, JSON.stringify(apiQuoteData.route, null, 2));
           const encodedPath = encodeV3Path(apiQuoteData.route);
           console.log(`DEBUG: Encoded path: ${encodedPath}`);
-          
+
           const exactInputParams = {
             path: encodedPath,
             recipient: account.address,
@@ -1764,7 +1751,7 @@ export function registerSwapTools(server: McpServer) {
             amountIn: amountInParsed,
             amountOutMinimum: minAmountOutParsed
           };
-          
+
           console.log(`DEBUG: exactInput parameters:`, {
             path: encodedPath,
             recipient: account.address,
@@ -1772,7 +1759,7 @@ export function registerSwapTools(server: McpServer) {
             amountIn: amountInParsed.toString(),
             amountOutMinimum: minAmountOutParsed.toString()
           });
-          
+
           hash = await walletClient.writeContract({
             address: SAILOR_ROUTER as `0x${string}`,
             abi: SAILOR_ROUTER_ABI,
@@ -1787,10 +1774,10 @@ export function registerSwapTools(server: McpServer) {
         } else {
           // Use exactInputSingle for single-hop V3 swaps
           console.log(`🔄 Executing V3 exactInputSingle on Sailor Finance`);
-          
+
           // For exactInputSingle, we need to get the fee from the first (and only) hop
           const fee = apiQuoteData?.route[0]?.fee ? parseInt(apiQuoteData.route[0].fee) : 3000; // Default to 0.3% fee
-          
+
           const exactInputSingleParams = {
             tokenIn: tokenIn as `0x${string}`,
             tokenOut: tokenOut as `0x${string}`,
@@ -1801,7 +1788,7 @@ export function registerSwapTools(server: McpServer) {
             amountOutMinimum: minAmountOutParsed,
             sqrtPriceLimitX96: BigInt(0)
           };
-          
+
           console.log(`DEBUG: exactInputSingle parameters:`, {
             tokenIn,
             tokenOut,
@@ -1811,7 +1798,7 @@ export function registerSwapTools(server: McpServer) {
             amountIn: amountInParsed.toString(),
             amountOutMinimum: minAmountOutParsed.toString()
           });
-          
+
           hash = await walletClient.writeContract({
             address: SAILOR_ROUTER as `0x${string}`,
             abi: SAILOR_ROUTER_ABI,
@@ -1958,6 +1945,28 @@ export function registerSwapTools(server: McpServer) {
       }
     }
   );
+
+
+  // Helper function to encode V3 path from Sailor route
+  function encodeV3Path(route: any[]): `0x${string}` {
+    if (!route || route.length === 0) {
+      throw new Error("Invalid route for V3 path encoding");
+    }
+
+    console.log('DEBUG: encodeV3Path - input route:', JSON.stringify(route, null, 2));
+
+    let path = route[0].tokenIn.address.toLowerCase().replace('0x', '');
+
+    for (const hop of route) {
+      const feeHex = parseInt(hop.fee).toString(16).padStart(6, '0');
+      path += feeHex;
+
+      path += hop.tokenOut.address.toLowerCase().replace('0x', '');
+    }
+
+    console.log(`DEBUG: encodeV3Path - final path: 0x${path}`);
+    return `0x${path}` as `0x${string}`;
+  }
 
   console.log("Swap tools registered successfully");
 }

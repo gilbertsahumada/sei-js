@@ -8,6 +8,7 @@ import { getSupportedNetworks } from '../core/chains.js';
 import { createDocsSearchTool } from '../docs/index.js';
 import { registerTokenTools } from '../core/daat-core/token-tools.js';
 import { registerSwapTools } from '../core/daat-core/swap-tools.js';
+import { registerSwapTools as registerRefactoresSwapTools } from '../core/daat-core/swap-tools-refactored.js';
 
 export const getServer = async () => {
 	try {
@@ -20,9 +21,11 @@ export const getServer = async () => {
 		//registerEVMResources(server);
 		//registerEVMTools(server);
 		//registerEVMPrompts(server);
-		// New Tools
+
+		
 		registerTokenTools(server);
-		registerSwapTools(server);
+		//registerSwapTools(server);
+		registerRefactoresSwapTools(server);
 
 		//await createSeiJSDocsSearchTool(server);
 
