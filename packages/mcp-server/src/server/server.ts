@@ -7,8 +7,8 @@ import { getPackageInfo } from './package-info.js';
 import { getSupportedNetworks } from '../core/chains.js';
 import { createDocsSearchTool } from '../docs/index.js';
 import { registerTokenTools } from '../core/daat-core/token-tools.js';
-import { registerSwapTools } from '../core/daat-core/swap-tools.js';
-import { registerSwapTools as registerRefactoresSwapTools } from '../core/daat-core/swap-tools-refactored.js';
+import { registerSwapTools } from '../core/daat-core/swap-tools-refactored.js';
+import { registerArbitrageExecutionTools } from '../core/daat-core/arbitrage-execution-tools.js';
 
 export const getServer = async () => {
 	try {
@@ -24,8 +24,8 @@ export const getServer = async () => {
 
 		
 		registerTokenTools(server);
-		//registerSwapTools(server);
-		registerRefactoresSwapTools(server);
+		registerSwapTools(server);
+		registerArbitrageExecutionTools(server);
 
 		//await createSeiJSDocsSearchTool(server);
 
