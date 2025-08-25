@@ -2,10 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerEVMTools } from '../core/tools.js';
 import { registerEVMResources } from '../core/resources.js';
 import { registerEVMPrompts } from '../core/prompts.js';
-import { createSeiJSDocsSearchTool } from '../mintlify/search.js';
+//import { createSeiJSDocsSearchTool } from '../mintlify/search.js';
 import { getPackageInfo } from './package-info.js';
 import { getSupportedNetworks } from '../core/chains.js';
 import { createDocsSearchTool } from '../docs/index.js';
+import { registerTokenTools } from '../core/daat-core/token-tools.js';
+import { registerSwapTools } from '../core/daat-core/swap-tools-refactored.js';
+import { registerArbitrageExecutionTools } from '../core/daat-core/arbitrage-execution-tools.js';
 
 export const getServer = async () => {
 	try {
@@ -15,11 +18,16 @@ export const getServer = async () => {
 			version: packageInfo.version
 		});
 
-		registerEVMResources(server);
-		registerEVMTools(server);
-		registerEVMPrompts(server);
+		//registerEVMResources(server);
+		//registerEVMTools(server);
+		//registerEVMPrompts(server);
 
-		await createSeiJSDocsSearchTool(server);
+		
+		registerTokenTools(server);
+		registerSwapTools(server);
+		registerArbitrageExecutionTools(server);
+
+		//await createSeiJSDocsSearchTool(server);
 
 		// Wrap docs search tool creation in try-catch to handle API rate limiting
 		// TODO: move this into trieve like the sei-js docs search tool

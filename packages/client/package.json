@@ -1,0 +1,43 @@
+{
+  "name": "@sei-js/client",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "yarn next dev --turbopack",
+    "build": "yarn next build",
+    "start": "yarn next start"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.5",
+    "@ai-sdk/google": "^2.0.7",
+    "@ai-sdk/react": "^2.0.17",
+    "@modelcontextprotocol/sdk": "^1.17.3",
+    "@radix-ui/react-slot": "^1.2.3",
+    "ai": "^5.0.17",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.540.0",
+    "next": "^15.4.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "streamdown": "^1.0.11",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.2.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.4.7",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.3"
+  }
+}

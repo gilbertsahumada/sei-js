@@ -38,10 +38,12 @@ function registerReadOnlyTools(server: McpServer) {
 				.describe("Network name (e.g., 'sei', 'sei-testnet', 'sei-devnet', etc.) or chain ID. Supports all Sei networks. Defaults to Sei mainnet.")
 		},
 		async ({ network = DEFAULT_NETWORK }) => {
+			console.log('🔗 Executing get_chain_info tool with network:', network);
 			try {
 				const chainId = await services.getChainId(network);
 				const blockNumber = await services.getBlockNumber(network);
 				const rpcUrl = getRpcUrl(network);
+				console.log('✅ get_chain_info completed successfully');
 
 				return {
 					content: [
@@ -189,8 +191,10 @@ function registerReadOnlyTools(server: McpServer) {
 				.describe("Network name (e.g., 'sei', 'sei-testnet', 'sei-devnet', etc.) or chain ID. Supports all Sei networks. Defaults to Sei mainnet.")
 		},
 		async ({ address, network = DEFAULT_NETWORK }) => {
+			console.log('💰 Executing get_balance tool for address:', address, 'network:', network);
 			try {
 				const balance = await services.getBalance(address, network);
+				console.log('✅ get_balance completed successfully');
 
 				return {
 					content: [
@@ -284,8 +288,10 @@ function registerReadOnlyTools(server: McpServer) {
 				.describe("Network name (e.g., 'sei', 'sei-testnet', 'sei-devnet', etc.) or chain ID. Supports all Sei networks. Defaults to Sei mainnet.")
 		},
 		async ({ tokenAddress, ownerAddress, network = DEFAULT_NETWORK }) => {
+			console.log('🪙 Executing get_token_balance tool for token:', tokenAddress, 'owner:', ownerAddress, 'network:', network);
 			try {
 				const balance = await services.getERC20Balance(tokenAddress, ownerAddress, network);
+				console.log('✅ get_token_balance completed successfully');
 
 				return {
 					content: [
